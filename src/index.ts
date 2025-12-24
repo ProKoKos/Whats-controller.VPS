@@ -35,7 +35,14 @@ const TUNNEL_PORT = process.env.TUNNEL_PORT || 3001;
 
 // Middleware
 app.use(helmet({
-  contentSecurityPolicy: false // Allow inline styles for landing page
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
 }));
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
