@@ -2,7 +2,8 @@
 # Запускает Docker контейнеры, Backend API и Frontend
 
 param(
-    [switch]$SkipDocker
+    [switch]$SkipDocker,
+    [switch]$Docker
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,6 +80,20 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Запуск backend и frontend одновременно
-npm run dev:full
+# Запуск через Docker Compose (продакшен) или npm (разработка)
+if ($Docker) {
+    Write-Host "🐳 Запуск через Docker Compose..." -ForegroundColor Yellow
+    docker compose up api
+} else {
+    # Проверка что npm установлен
+    try {
+        npm --version | Out-Null
+    } catch {
+        Write-Host "❌ npm не найден. Установите Node.js или используйте: .\start.ps1 -Docker" -ForegroundColor Red
+        exit 1
+    }
+    
+    # Запуск backend и frontend одновременно (разработка)
+    npm run dev:full
+}
 

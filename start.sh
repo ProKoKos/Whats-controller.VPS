@@ -5,8 +5,23 @@
 set -e
 
 SKIP_DOCKER=false
+USE_DOCKER_COMPOSE=false
+
 if [ "$1" == "--skip-docker" ]; then
     SKIP_DOCKER=true
+elif [ "$1" == "--docker" ]; then
+    USE_DOCKER_COMPOSE=true
+fi
+
+# Проверка: использовать Docker Compose для backend (продакшен) или npm напрямую (разработка)
+if [ "$USE_DOCKER_COMPOSE" = false ] && [ -f "docker-compose.yml" ]; then
+    # Проверяем есть ли сервис api в docker-compose.yml и не установлен ли Node.js
+    if grep -q "^\s*api:" docker-compose.yml 2>/dev/null && ! command -v npm &> /dev/null; then
+        echo "⚠️  Node.js не установлен, но обнаружен docker-compose.yml с сервисом api"
+        echo "   Используйте: ./start.sh --docker (для запуска через Docker Compose)"
+        echo "   Или установите Node.js для локальной разработки"
+        exit 1
+    fi
 fi
 
 echo ""
@@ -69,6 +84,18 @@ echo ""
 echo "========================================"
 echo ""
 
-# Запуск backend и frontend одновременно
-npm run dev:full
+# Запуск через Docker Compose (продакшен) или npm (разработка)
+if [ "$USE_DOCKER_COMPOSE" = true ]; then
+    echo "🐳 Запуск через Docker Compose..."
+    docker compose up api
+else
+    # Проверка что npm установлен
+    if ! command -v npm &> /dev/null; then
+        echo "❌ npm не найден. Установите Node.js или используйте: ./start.sh --docker"
+        exit 1
+    fi
+    
+    # Запуск backend и frontend одновременно (разработка)
+    npm run dev:full
+fi
 
