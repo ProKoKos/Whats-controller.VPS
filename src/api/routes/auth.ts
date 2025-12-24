@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { z } from 'zod';
 import { getPool } from '../../database';
 import { createError } from '../../middleware/errorHandler';
