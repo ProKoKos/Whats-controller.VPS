@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Конфигурация для продакшена
 # Caddy работает на отдельном контейнере (192.168.100.101)
 # API должен быть доступен из внутренней сети на портах 3000/3001
@@ -68,7 +66,12 @@ services:
       NODE_ENV: production
       PORT: 3000
       TUNNEL_PORT: 3001
-      DATABASE_URL: postgresql://${DB_USER:-wmoc}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-wmoc_saas}
+      DATABASE_URL: ${DATABASE_URL}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-wmoc_saas}
+      DB_USER: ${DB_USER:-wmoc}
+      DB_PASSWORD: ${DB_PASSWORD}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://wmoc.online}
