@@ -227,22 +227,9 @@ LOG_LEVEL=info
 mkdir -p logs/caddy backups
 ```
 
-### 2.10. Использование docker-compose без Caddy
+### 2.10. Docker Compose конфигурация
 
-Так как Caddy уже работает на отдельном контейнере, используйте файл `docker-compose.prod-no-caddy.yml`:
-
-```bash
-# Используйте этот файл вместо docker-compose.prod.yml
-cp docker-compose.prod-no-caddy.yml docker-compose.prod.yml
-```
-
-Или используйте напрямую:
-
-```bash
-docker compose -f docker-compose.prod-no-caddy.yml up -d
-```
-
-Файл `docker-compose.prod-no-caddy.yml` уже настроен правильно:
+Файл `docker-compose.yml` уже настроен для работы без Caddy (Caddy работает на отдельном контейнере):
 
 ```yaml
 version: '3.8'
@@ -343,16 +330,16 @@ volumes:
 
 ```bash
 # Собрать образы
-docker compose -f docker-compose.prod-no-caddy.yml build
+docker compose build
 
 # Запустить все сервисы
-docker compose -f docker-compose.prod-no-caddy.yml up -d
+docker compose up -d
 
 # Проверить статус
-docker compose -f docker-compose.prod-no-caddy.yml ps
+docker compose ps
 
 # Просмотр логов
-docker compose -f docker-compose.prod-no-caddy.yml logs -f
+docker compose logs -f
 ```
 
 ### 2.12. Применение миграций базы данных
@@ -362,7 +349,7 @@ docker compose -f docker-compose.prod-no-caddy.yml logs -f
 docker cp src/database/migrations/001_initial_schema.sql wmoc-postgres:/tmp/
 
 # Выполнить миграцию
-docker compose -f docker-compose.prod-no-caddy.yml exec postgres psql -U wmoc -d wmoc_saas -f /tmp/001_initial_schema.sql
+docker compose exec postgres psql -U wmoc -d wmoc_saas -f /tmp/001_initial_schema.sql
 ```
 
 Или вручную через psql:
@@ -426,31 +413,31 @@ curl -I https://wmoc.online
 
 ```bash
 # Все сервисы
-docker compose -f docker-compose.prod-no-caddy.yml logs -f
+docker compose logs -f
 
 # Конкретный сервис
-docker compose -f docker-compose.prod-no-caddy.yml logs -f api
-docker compose -f docker-compose.prod-no-caddy.yml logs -f postgres
+docker compose logs -f api
+docker compose logs -f postgres
 ```
 
 ### Перезапуск сервисов
 
 ```bash
 # Перезапустить все
-docker compose -f docker-compose.prod-no-caddy.yml restart
+docker compose restart
 
 # Перезапустить конкретный сервис
-docker compose -f docker-compose.prod-no-caddy.yml restart api
+docker compose restart api
 ```
 
 ### Остановка и запуск
 
 ```bash
 # Остановить
-docker compose -f docker-compose.prod-no-caddy.yml down
+docker compose down
 
 # Запустить
-docker compose -f docker-compose.prod-no-caddy.yml up -d
+docker compose up -d
 ```
 
 ### Обновление приложения
@@ -462,10 +449,10 @@ cd ~/wmoc-server/server
 git pull
 
 # Пересобрать и перезапустить
-docker compose -f docker-compose.prod-no-caddy.yml up -d --build
+docker compose up -d --build
 
 # Применить новые миграции (если есть)
-# docker compose -f docker-compose.prod-no-caddy.yml exec postgres psql -U wmoc -d wmoc_saas -f /tmp/new_migration.sql
+# docker compose exec postgres psql -U wmoc -d wmoc_saas -f /tmp/new_migration.sql
 ```
 
 ---
@@ -476,16 +463,16 @@ docker compose -f docker-compose.prod-no-caddy.yml up -d --build
 
 ```bash
 # Создать бэкап
-docker compose -f docker-compose.prod-no-caddy.yml exec postgres pg_dump -U wmoc wmoc_saas > backups/backup_$(date +%Y%m%d_%H%M%S).sql
+docker compose exec postgres pg_dump -U wmoc wmoc_saas > backups/backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Автоматический бэкап (добавить в crontab)
-# 0 2 * * * cd /home/wmoc/wmoc-server/server && docker compose -f docker-compose.prod-no-caddy.yml exec -T postgres pg_dump -U wmoc wmoc_saas > backups/backup_$(date +\%Y\%m\%d_\%H\%M\%S).sql
+# 0 2 * * * cd /home/wmoc/wmoc-server/server && docker compose exec -T postgres pg_dump -U wmoc wmoc_saas > backups/backup_$(date +\%Y\%m\%d_\%H\%M\%S).sql
 ```
 
 ### Восстановление из бэкапа
 
 ```bash
-docker compose -f docker-compose.prod-no-caddy.yml exec -T postgres psql -U wmoc -d wmoc_saas < backups/backup_YYYYMMDD_HHMMSS.sql
+docker compose exec -T postgres psql -U wmoc -d wmoc_saas < backups/backup_YYYYMMDD_HHMMSS.sql
 ```
 
 ---
@@ -545,13 +532,13 @@ sudo ufw status verbose
 
 ```bash
 # Проверить статус контейнеров
-docker compose -f docker-compose.prod-no-caddy.yml ps
+docker compose ps
 
 # Проверить логи
-docker compose -f docker-compose.prod-no-caddy.yml logs api
+docker compose logs api
 
 # Проверить подключение к БД
-docker compose -f docker-compose.prod-no-caddy.yml exec api ping postgres
+docker compose exec api ping postgres
 ```
 
 ### Caddy не может подключиться к API
@@ -588,7 +575,7 @@ caddy validate --config /etc/caddy/Caddyfile
 - [ ] Настроен firewall (порты 3000/3001 только от Caddy)
 - [ ] Клонирован репозиторий
 - [ ] Настроен `.env` файл с секретами
-- [ ] Используется `docker-compose.prod-no-caddy.yml` (без Caddy)
+- [ ] Используется `docker-compose.yml` (без Caddy)
 - [ ] Запущены контейнеры
 - [ ] Применены миграции БД
 - [ ] Проверен health endpoint

@@ -95,11 +95,11 @@ nano .env  # Заполнить секреты
 mkdir -p logs backups
 
 # Запустить контейнеры
-docker compose -f docker-compose.prod-no-caddy.yml up -d --build
+docker compose up -d --build
 
 # Применить миграции
 docker cp src/database/migrations/001_initial_schema.sql wmoc-postgres:/tmp/
-docker compose -f docker-compose.prod-no-caddy.yml exec postgres psql -U wmoc -d wmoc_saas -f /tmp/001_initial_schema.sql
+docker compose exec postgres psql -U wmoc -d wmoc_saas -f /tmp/001_initial_schema.sql
 
 # Проверить
 curl http://192.168.100.102:3000/health
@@ -119,18 +119,19 @@ curl https://wmoc.online/health
 
 ```bash
 # Логи
-docker compose -f docker-compose.prod-no-caddy.yml logs -f
+docker compose logs -f
 
 # Перезапуск
-docker compose -f docker-compose.prod-no-caddy.yml restart
+docker compose restart
 
 # Статус
-docker compose -f docker-compose.prod-no-caddy.yml ps
+docker compose ps
 ```
 
 ## Полная инструкция
 
 См. [DEPLOYMENT_PRODUCTION.md](DEPLOYMENT_PRODUCTION.md) для детальной инструкции.
+
 
 
 
