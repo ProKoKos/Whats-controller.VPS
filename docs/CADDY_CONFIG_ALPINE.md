@@ -18,10 +18,12 @@ wmoc.online {
         format json
     }
 
-    # API routes (must be first, more specific)
+    # API routes (most specific first)
     handle /api/* {
         reverse_proxy 192.168.100.102:3000 {
             header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -30,6 +32,8 @@ wmoc.online {
     handle /c/* {
         reverse_proxy 192.168.100.102:3000 {
             header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -44,6 +48,8 @@ wmoc.online {
             header_up Connection {>Connection}
             header_up Upgrade {>Upgrade}
             header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -57,6 +63,8 @@ wmoc.online {
     handle {
         reverse_proxy 192.168.100.102:3000 {
             header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }

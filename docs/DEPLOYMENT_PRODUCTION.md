@@ -48,39 +48,60 @@ wmoc.online {
         format json
     }
 
-    # API routes
-    reverse_proxy /api/* 192.168.100.102:3000 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        header_up Host {host}
+    # API routes (most specific first)
+    handle /api/* {
+        reverse_proxy 192.168.100.102:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
+        }
     }
 
     # Controller proxy routes
-    reverse_proxy /c/* 192.168.100.102:3000 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        header_up Host {host}
+    handle /c/* {
+        reverse_proxy 192.168.100.102:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
+        }
     }
 
     # WebSocket tunnel
-    reverse_proxy /tunnel 192.168.100.102:3000 {
-        transport http {
-            read_timeout 3600s
-            write_timeout 3600s
+    handle /tunnel {
+        reverse_proxy 192.168.100.102:3000 {
+            transport http {
+                read_timeout 3600s
+                write_timeout 3600s
+            }
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
-        header_up Connection {>Connection}
-        header_up Upgrade {>Upgrade}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
     }
 
     # Health check
-    reverse_proxy /health 192.168.100.102:3000
+    handle /health {
+        reverse_proxy 192.168.100.102:3000
+    }
+
+    # Static files and landing page (catch-all, must be last)
+    handle {
+        reverse_proxy 192.168.100.102:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
+        }
+    }
 }
 ```
+
+**Важно:** В Caddy используется `handle` для правильной маршрутизации. Более специфичные маршруты (`/api/*`, `/c/*`) должны быть первыми, а catch-all `handle` без пути — последним.
 
 ### 1.3. Проверка и перезагрузка Caddy
 
