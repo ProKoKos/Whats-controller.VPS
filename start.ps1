@@ -19,7 +19,8 @@ if (-not $SkipDocker) {
     try {
         docker ps | Out-Null
         Write-Host "   ✓ Docker запущен" -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Host "   ❌ Docker не запущен. Запустите Docker Desktop и повторите попытку." -ForegroundColor Red
         exit 1
     }
@@ -46,12 +47,13 @@ if (-not $SkipDocker) {
     while ($attempt -lt $maxAttempts) {
         Start-Sleep -Seconds 2
         try {
-            $result = docker compose exec -T postgres pg_isready -U wmoc 2>&1
+            $null = docker compose exec -T postgres pg_isready -U wmoc 2>&1
             if ($LASTEXITCODE -eq 0) {
                 $dbReady = $true
                 break
             }
-        } catch {
+        }
+        catch {
             # Продолжаем ожидание
         }
         $attempt++
@@ -61,11 +63,13 @@ if (-not $SkipDocker) {
     if ($dbReady) {
         Write-Host ""
         Write-Host "   ✓ База данных готова" -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host ""
         Write-Host "   ⚠️  База данных может быть ещё не готова, но продолжаем..." -ForegroundColor Yellow
     }
-} else {
+}
+else {
     Write-Host "⏭️  Пропуск запуска Docker контейнеров (используйте -SkipDocker)" -ForegroundColor Yellow
 }
 
@@ -84,11 +88,13 @@ Write-Host ""
 if ($Docker) {
     Write-Host "🐳 Запуск через Docker Compose..." -ForegroundColor Yellow
     docker compose up api
-} else {
+}
+else {
     # Проверка что npm установлен
     try {
-        npm --version | Out-Null
-    } catch {
+        $null = npm --version
+    }
+    catch {
         Write-Host "❌ npm не найден. Установите Node.js или используйте: .\start.ps1 -Docker" -ForegroundColor Red
         exit 1
     }
@@ -96,4 +102,3 @@ if ($Docker) {
     # Запуск backend и frontend одновременно (разработка)
     npm run dev:full
 }
-
