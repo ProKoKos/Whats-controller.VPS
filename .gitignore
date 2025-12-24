@@ -13,3 +13,11 @@ coverage/
 *.swo
 *~
 
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/.vercel
+frontend/*.tsbuildinfo
+

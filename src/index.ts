@@ -35,7 +35,7 @@ const TUNNEL_PORT = process.env.TUNNEL_PORT || 3001;
 
 // CORS (first)
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3001'],
   credentials: true
 }));
 
@@ -49,21 +49,8 @@ app.use(helmet({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files (including HTML files)
-app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      res.type('text/html; charset=utf-8');
-    }
-  }
-}));
-
-// Landing page (explicit route for root - after static files)
-app.get('/', (req, res) => {
-  const filePath = path.join(__dirname, 'public', 'index.html');
-  res.type('text/html; charset=utf-8');
-  res.sendFile(filePath);
-});
+// Статические HTML файлы удалены - теперь используем Next.js frontend
+// Frontend запускается отдельно на порту 3001
 
 // Health check
 app.get('/health', (req, res) => {

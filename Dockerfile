@@ -29,9 +29,6 @@ RUN npm install --omit=dev
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Copy public static files
-COPY --from=builder /app/src/public ./dist/public
-
 # Create logs directory
 RUN mkdir -p logs
 
