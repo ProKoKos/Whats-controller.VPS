@@ -76,15 +76,31 @@ export class ApiClient {
     });
   }
 
-  // Controller endpoints (for future use)
-  async getControllers() {
-    return this.request<Array<{
+  // User profile
+  async getProfile() {
+    return this.request<{
       id: string;
-      macAddress: string;
-      name?: string;
-      isActive: boolean;
-      lastSeenAt?: string;
-    }>>('/controllers', {
+      email: string;
+      createdAt: string;
+    }>('/auth/profile', {
+      method: 'GET',
+    });
+  }
+
+  // Controller endpoints
+  async getControllers() {
+    return this.request<{
+      controllers: Array<{
+        id: string;
+        macAddress: string;
+        firmwareVersion?: string;
+        name: string;
+        isActive: boolean;
+        lastSeenAt?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>('/controllers', {
       method: 'GET',
     });
   }
@@ -93,12 +109,51 @@ export class ApiClient {
     return this.request<{
       id: string;
       macAddress: string;
-      name?: string;
+      firmwareVersion?: string;
+      name: string;
       isActive: boolean;
       lastSeenAt?: string;
+      createdAt: string;
+      updatedAt: string;
     }>(`/controllers/${id}`, {
       method: 'GET',
     });
+  }
+
+  async activateController(mac: string, firmwareVersion?: string) {
+    return this.request<{
+      controllerId: string;
+      activationToken: string;
+      message: string;
+    }>('/controllers/activate', {
+      method: 'POST',
+      body: JSON.stringify({ mac, firmwareVersion }),
+    });
+  }
+
+  async updateController(id: string, name: string) {
+    return this.request<{
+      message: string;
+    }>(`/controllers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async deleteController(id: string) {
+    return this.request<{
+      message: string;
+    }>(`/controllers/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Logout
+  logout() {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+    }
   }
 }
 

@@ -40,7 +40,10 @@ function LoginForm() {
       }
 
       // Перенаправляем (пока просто показываем сообщение, так как dashboard ещё не готов)
-      setSuccess("Вход выполнен успешно! Личный кабинет находится в разработке.");
+          setSuccess("Вход выполнен успешно! Перенаправление...");
+          setTimeout(() => {
+            window.location.href = "/dashboard";
+          }, 1000);
     } catch (err: unknown) {
       const error = err as { message?: string };
       setError(error.message || "Неверный email или пароль");
