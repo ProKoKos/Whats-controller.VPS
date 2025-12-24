@@ -54,7 +54,6 @@
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "node-pg-migrate": "^6.2.2",
-    "@types/node-pg-migrate": "^6.1.5",
     "jest": "^29.7.0",
     "@types/jest": "^29.5.11"
   }
