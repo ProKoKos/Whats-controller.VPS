@@ -1,4 +1,6 @@
-# Развёртывание в продакшен (Proxmox + Ubuntu)
+# Развёртывание в продакшен
+
+Полная инструкция по развёртыванию WMOC SaaS Platform в продакшене.
 
 ## Архитектура
 
@@ -27,9 +29,11 @@
 └─────────────────────────────────────────┘
 ```
 
-## Шаг 1: Настройка Caddy на Alpine контейнере (192.168.100.101)
+---
 
-### 1.1. Подключение к Alpine контейнеру
+## Шаг 1: Настройка Caddy на Alpine (192.168.100.101)
+
+### 1.1. Подключение к контейнеру
 
 ```bash
 ssh root@192.168.100.101
@@ -196,7 +200,7 @@ cd wmoc-server/server
 ### 2.8. Настройка переменных окружения
 
 ```bash
-cp .env.example .env
+# Создать .env файл
 nano .env  # или используйте ваш любимый редактор
 ```
 
@@ -241,239 +245,110 @@ LOG_LEVEL=info
 > - `JWT_SECRET` должен быть длинным случайным ключом (минимум 32 символа)
 > - `DB_PASSWORD` должен быть надёжным паролем
 > - Используйте `openssl rand -base64 32` для генерации секретов
+> - В `DATABASE_URL` специальные символы в пароле должны быть URL-encoded
 
 ### 2.9. Создание необходимых директорий
 
 ```bash
-mkdir -p logs/caddy backups
+mkdir -p logs backups
 ```
 
-### 2.10. Docker Compose конфигурация
-
-Файл `docker-compose.yml` уже настроен для работы без Caddy (Caddy работает на отдельном контейнере):
-
-```yaml
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: wmoc-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DB_USER:-wmoc}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME:-wmoc_saas}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backups:/backups
-    ports:
-      - "127.0.0.1:5432:5432"  # Только локальный доступ
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wmoc}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    command: >
-      postgres
-      -c shared_buffers=256MB
-      -c max_connections=200
-      -c effective_cache_size=1GB
-      -c maintenance_work_mem=64MB
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB
-      -c default_statistics_target=100
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c work_mem=4MB
-      -c min_wal_size=1GB
-      -c max_wal_size=4GB
-
-  redis:
-    image: redis:7-alpine
-    container_name: wmoc-redis
-    restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
-    volumes:
-      - redis_data:/data
-    ports:
-      - "127.0.0.1:6379:6379"  # Только локальный доступ
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: wmoc-api
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      TUNNEL_PORT: 3001
-      DATABASE_URL: postgresql://${DB_USER:-wmoc}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-wmoc_saas}
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://wmoc.online}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    ports:
-      # Доступен из внутренней сети (для Caddy на 192.168.100.101)
-      - "0.0.0.0:3000:3000"
-      - "0.0.0.0:3001:3001"
-    volumes:
-      - ./logs:/app/logs
-    networks:
-      - default
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-```
-
-> **Важно:** Порты 3000 и 3001 привязаны к `0.0.0.0`, чтобы Caddy мог к ним подключиться, но firewall ограничивает доступ только с IP Caddy.
-
-### 2.11. Сборка и запуск контейнеров
+### 2.10. Запуск через Docker Compose
 
 ```bash
-# Собрать образы
-docker compose build
-
-# Запустить все сервисы
-docker compose up -d
+# Запустить все сервисы (PostgreSQL, Redis, API)
+docker compose up -d --build
 
 # Проверить статус
 docker compose ps
 
-# Просмотр логов
-docker compose logs -f
+# Посмотреть логи
+docker compose logs -f api
 ```
 
-### 2.12. Применение миграций базы данных
+### 2.11. Применение миграций базы данных
 
 ```bash
-# Скопировать SQL файл в контейнер
+# Скопировать SQL миграцию в контейнер
 docker cp src/database/migrations/001_initial_schema.sql wmoc-postgres:/tmp/
 
-# Выполнить миграцию
+# Применить миграцию
 docker compose exec postgres psql -U wmoc -d wmoc_saas -f /tmp/001_initial_schema.sql
+
+# Проверить что таблицы созданы
+docker compose exec postgres psql -U wmoc -d wmoc_saas -c "\dt"
 ```
 
-Или вручную через psql:
+### 2.12. Проверка работы
 
 ```bash
-docker compose -f docker-compose.prod.yml exec postgres psql -U wmoc -d wmoc_saas
+# Проверить health endpoint
+curl http://localhost:3000/health
 
-# Затем выполните SQL из файла src/database/migrations/001_initial_schema.sql
-```
-
-### 2.13. Проверка работы
-
-```bash
-# Проверить health endpoint напрямую
-curl http://192.168.100.102:3000/health
-
-# Проверить через Caddy (должен быть настроен DNS)
+# Через Caddy (если DNS настроен)
 curl https://wmoc.online/health
-
-# Проверить логи API
-docker compose -f docker-compose.prod.yml logs -f api
 ```
 
 ---
 
-## Шаг 3: Настройка DNS
+## Обновление проекта
 
-Убедитесь, что DNS записи настроены:
-
-```
-A     wmoc.online        → внешний-ip-адрес-роутера
-A     *.wmoc.online      → внешний-ip-адрес-роутера
-```
-
-Роутер должен пробрасывать порты 80 и 443 на `192.168.100.101` (Alpine контейнер с Caddy).
-
----
-
-## Шаг 4: Проверка SSL
-
-После первого запроса к `https://wmoc.online`, Caddy автоматически:
-1. Получит SSL сертификат от Let's Encrypt
-2. Настроит HTTPS
-3. Начнёт обслуживать запросы
-
-Проверить можно:
+После изменений в коде:
 
 ```bash
-# На Alpine контейнере (192.168.100.101)
-tail -f /var/log/caddy/access.log
+cd ~/wmoc-server
+git pull
+cd server
 
-# Проверить сертификат
-curl -I https://wmoc.online
+# Пересобрать и перезапустить контейнеры
+docker compose build api
+docker compose up -d api
+
+# Или перезапустить все сервисы
+docker compose up -d --build
 ```
 
 ---
 
 ## Управление сервисами
 
-### Просмотр логов
+### Запуск/остановка
 
 ```bash
-# Все сервисы
-docker compose logs -f
+# Запустить все сервисы
+docker compose up -d
 
-# Конкретный сервис
-docker compose logs -f api
-docker compose logs -f postgres
-```
+# Остановить все сервисы
+docker compose down
 
-### Перезапуск сервисов
+# Остановить только API
+docker compose stop api
 
-```bash
-# Перезапустить все
-docker compose restart
-
-# Перезапустить конкретный сервис
+# Перезапустить API
 docker compose restart api
 ```
 
-### Остановка и запуск
+### Логи
 
 ```bash
-# Остановить
-docker compose down
+# Все логи
+docker compose logs -f
 
-# Запустить
-docker compose up -d
+# Только API
+docker compose logs -f api
+
+# Последние 100 строк
+docker compose logs --tail=100 api
 ```
 
-### Обновление приложения
+### Статус
 
 ```bash
-cd ~/wmoc-server/server
+# Статус контейнеров
+docker compose ps
 
-# Получить последние изменения
-git pull
-
-# Пересобрать и перезапустить
-docker compose up -d --build
-
-# Применить новые миграции (если есть)
-# docker compose exec postgres psql -U wmoc -d wmoc_saas -f /tmp/new_migration.sql
+# Использование ресурсов
+docker stats
 ```
 
 ---
@@ -515,7 +390,7 @@ df -h
 
 ```bash
 # API health
-curl http://192.168.100.102:3000/health
+curl http://localhost:3000/health
 
 # Через Caddy
 curl https://wmoc.online/health
@@ -571,36 +446,58 @@ sudo netstat -tulpn | grep 3000
 # Проверить firewall
 sudo ufw status
 
-# Проверить с Alpine контейнера
-# На 192.168.100.101:
-curl http://192.168.100.102:3000/health
+# Проверить логи Caddy на Alpine контейнере
+ssh root@192.168.100.101
+tail -f /var/log/caddy/access.log
 ```
 
-### Проблемы с SSL
+### База данных не подключается
 
 ```bash
-# На Alpine контейнере проверить логи Caddy
-tail -f /var/log/caddy/access.log
+# Проверить что контейнер запущен
+docker compose ps postgres
 
-# Проверить конфигурацию
-caddy validate --config /etc/caddy/Caddyfile
+# Проверить логи
+docker compose logs postgres
+
+# Проверить подключение
+docker compose exec postgres psql -U wmoc -d wmoc_saas -c "SELECT 1;"
+```
+
+### Ошибки при сборке Docker образа
+
+```bash
+# Очистить кэш Docker
+docker system prune -a
+
+# Пересобрать без кэша
+docker compose build --no-cache api
 ```
 
 ---
 
-## Чеклист развёртывания
+## Важные замечания
 
-- [ ] Настроен Caddyfile на Alpine контейнере (192.168.100.101)
-- [ ] Caddy перезагружен и работает
-- [ ] Установлен Docker на Ubuntu (192.168.100.102)
-- [ ] Настроен firewall (порты 3000/3001 только от Caddy)
-- [ ] Клонирован репозиторий
-- [ ] Настроен `.env` файл с секретами
-- [ ] Используется `docker-compose.yml` (без Caddy)
-- [ ] Запущены контейнеры
-- [ ] Применены миграции БД
-- [ ] Проверен health endpoint
-- [ ] Настроены DNS записи
-- [ ] Проверен SSL сертификат
-- [ ] Настроено резервное копирование
+1. **Node.js НЕ нужен на хосте** - всё работает через Docker контейнеры
+2. **Frontend не развёрнут на продакшене** - пока используется только Backend API
+3. **Все сервисы в Docker** - PostgreSQL, Redis, API
+4. **Caddy на отдельном контейнере** - обрабатывает SSL и проксирование
+5. **Миграции применяются вручную** - через `docker compose exec`
 
+---
+
+## Быстрый старт (после первоначальной настройки)
+
+```bash
+cd ~/wmoc-server/server
+
+# Обновить код
+git pull
+
+# Пересобрать и перезапустить
+docker compose up -d --build
+
+# Применить новые миграции (если есть)
+docker cp src/database/migrations/001_initial_schema.sql wmoc-postgres:/tmp/
+docker compose exec postgres psql -U wmoc -d wmoc_saas -f /tmp/001_initial_schema.sql
+```
