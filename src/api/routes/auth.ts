@@ -87,18 +87,16 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     }
 
     // Generate tokens
-    const accessTokenOptions: SignOptions = { expiresIn: process.env.JWT_EXPIRES_IN || '15m' };
     const accessToken = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET!,
-      accessTokenOptions
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' } as SignOptions
     );
 
-    const refreshTokenOptions: SignOptions = { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' };
     const refreshToken = jwt.sign(
       { userId: user.id },
       process.env.JWT_SECRET!,
-      refreshTokenOptions
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' } as SignOptions
     );
 
     logger.info(`User logged in: ${user.email}`);
