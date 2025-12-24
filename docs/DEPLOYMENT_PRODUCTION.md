@@ -93,9 +93,9 @@ wmoc.online {
         reverse_proxy 192.168.100.102:3000
     }
 
-    # Static files and landing page (catch-all, must be last)
+    # Frontend (Next.js) - catch-all для всех остальных запросов (must be last)
     handle {
-        reverse_proxy 192.168.100.102:3000 {
+        reverse_proxy 192.168.100.102:3002 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
@@ -158,12 +158,13 @@ su - wmoc
 
 ```bash
 sudo ufw allow 22/tcp    # SSH
-sudo ufw allow from 192.168.100.101 to any port 3000 proto tcp  # Только от Caddy
-sudo ufw allow from 192.168.100.101 to any port 3001 proto tcp  # WebSocket от Caddy
+sudo ufw allow from 192.168.100.101 to any port 3000 proto tcp  # API только от Caddy
+sudo ufw allow from 192.168.100.101 to any port 3001 proto tcp  # WebSocket только от Caddy
+sudo ufw allow from 192.168.100.101 to any port 3002 proto tcp  # Frontend только от Caddy
 sudo ufw enable
 ```
 
-> **Важно:** Порты 3000 и 3001 должны быть доступны только из внутренней сети (от Caddy), не из интернета.
+> **Важно:** Порты 3000, 3001 и 3002 должны быть доступны только из внутренней сети (от Caddy), не из интернета.
 
 ### 2.5. Установка Docker и Docker Compose
 
@@ -256,14 +257,17 @@ mkdir -p logs backups
 ### 2.10. Запуск через Docker Compose
 
 ```bash
-# Запустить все сервисы (PostgreSQL, Redis, API)
+# Запустить все сервисы (PostgreSQL, Redis, API, Frontend)
 docker compose up -d --build
 
 # Проверить статус
 docker compose ps
 
-# Посмотреть логи
+# Посмотреть логи API
 docker compose logs -f api
+
+# Посмотреть логи Frontend
+docker compose logs -f frontend
 ```
 
 ### 2.11. Применение миграций базы данных
@@ -479,10 +483,10 @@ docker compose build --no-cache api
 ## Важные замечания
 
 1. **Node.js НЕ нужен на хосте** - всё работает через Docker контейнеры
-2. **Frontend не развёрнут на продакшене** - пока используется только Backend API
-3. **Все сервисы в Docker** - PostgreSQL, Redis, API
-4. **Caddy на отдельном контейнере** - обрабатывает SSL и проксирование
-5. **Миграции применяются вручную** - через `docker compose exec`
+2. **Все сервисы в Docker** - PostgreSQL, Redis, API, Frontend (Next.js)
+3. **Caddy на отдельном контейнере** - обрабатывает SSL и проксирование
+4. **Миграции применяются вручную** - через `docker compose exec`
+5. **Frontend (Next.js) работает на порту 3002** - проксируется через Caddy
 
 ---
 

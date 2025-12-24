@@ -59,9 +59,9 @@ wmoc.online {
         reverse_proxy 192.168.100.102:3000
     }
 
-    # Static files and landing page (catch-all, must be last)
+    # Frontend (Next.js) - catch-all для всех остальных запросов (must be last)
     handle {
-        reverse_proxy 192.168.100.102:3000 {
+        reverse_proxy 192.168.100.102:3002 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
