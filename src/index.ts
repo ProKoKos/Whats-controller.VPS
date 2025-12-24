@@ -47,14 +47,16 @@ app.get('/', (req, res) => {
   res.sendFile(filePath);
 });
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+// CORS (before static files)
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check
 app.get('/health', (req, res) => {
