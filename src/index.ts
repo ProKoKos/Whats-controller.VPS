@@ -33,18 +33,20 @@ const wsServer = new WebSocketServer({
 const PORT = process.env.PORT || 3000;
 const TUNNEL_PORT = process.env.TUNNEL_PORT || 3001;
 
-// Serve static files first (before helmet to avoid CSP issues)
+// Middleware (configure Helmet to not block static content)
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for landing page with inline styles
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Landing page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
-// Middleware (after static files)
-app.use(helmet({
-  contentSecurityPolicy: false // Disable CSP for landing page with inline styles
-}));
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
