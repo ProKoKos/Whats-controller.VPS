@@ -33,16 +33,17 @@ const wsServer = new WebSocketServer({
 const PORT = process.env.PORT || 3000;
 const TUNNEL_PORT = process.env.TUNNEL_PORT || 3001;
 
-// Middleware
+// Serve static files first (before helmet to avoid CSP issues)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Landing page
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Middleware (after static files)
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-    },
-  },
+  contentSecurityPolicy: false // Disable CSP for landing page with inline styles
 }));
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -50,14 +51,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Landing page
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 // Health check
 app.get('/health', (req, res) => {
