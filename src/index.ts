@@ -40,14 +40,15 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
+// Landing page (before static files to ensure it's served)
+app.get('/', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'index.html');
+  res.type('text/html; charset=utf-8');
+  res.sendFile(filePath);
+});
+
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Landing page
-app.get('/', (req, res) => {
-  res.type('text/html; charset=utf-8');
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
