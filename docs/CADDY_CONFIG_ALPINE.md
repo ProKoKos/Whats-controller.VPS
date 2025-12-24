@@ -18,8 +18,54 @@ wmoc.online {
         format json
     }
 
-    # API routes
-    reverse_proxy /api/* 192.168.100.102:3000 {
+    # API routes (must be first, more specific)
+    handle /api/* {
+        reverse_proxy 192.168.100.102:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up Host {host}
+        }
+    }
+
+    # Controller proxy routes
+    handle /c/* {
+        reverse_proxy 192.168.100.102:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up Host {host}
+        }
+    }
+
+    # WebSocket tunnel
+    handle /tunnel {
+        reverse_proxy 192.168.100.102:3000 {
+            transport http {
+                read_timeout 3600s
+                write_timeout 3600s
+            }
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+            header_up X-Real-IP {remote_host}
+            header_up Host {host}
+        }
+    }
+
+    # Health check
+    handle /health {
+        reverse_proxy 192.168.100.102:3000
+    }
+
+    # Static files and landing page (catch-all, must be last)
+    handle {
+        reverse_proxy 192.168.100.102:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up Host {host}
+        }
+    }
+}
+```
+
+**Важно:** В Caddy используется `handle` для правильной маршрутизации. Более специфичные маршруты (`/api/*`, `/c/*`) должны быть первыми, а catch-all `handle` без пути — последним.
+
+## Альтернативный вариант (без handle)
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
