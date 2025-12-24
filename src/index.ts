@@ -45,6 +45,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Landing page
 app.get('/', (req, res) => {
+  res.type('text/html; charset=utf-8');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 app.use(cors({
