@@ -2,6 +2,7 @@
 
 param(
     [Parameter(Mandatory=$true)]
+    [ValidateRange(1, 65535)]
     [int]$Port
 )
 
@@ -16,10 +17,10 @@ if ($connections) {
         if ($process) {
             Write-Host "Найден процесс: $($process.ProcessName) (PID: $pid)" -ForegroundColor Cyan
             $process.Kill()
-            Write-Host "   ✓ Процесс остановлен" -ForegroundColor Green
+            Write-Host "   Процесс остановлен" -ForegroundColor Green
         }
     }
-} else {
+}
+else {
     Write-Host "Порт $Port свободен" -ForegroundColor Green
 }
-

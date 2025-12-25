@@ -5,7 +5,8 @@ Write-Host "🚀 Запуск WMOC SaaS Platform в режиме разрабо�
 # Проверка что Docker запущен
 try {
     docker ps | Out-Null
-} catch {
+}
+catch {
     Write-Host "❌ Docker не запущен. Запустите Docker Desktop." -ForegroundColor Red
     exit 1
 }

@@ -1,4 +1,4 @@
-# Единый скрипт запуска WMOC SaaS Platform
+﻿# Единый скрипт запуска WMOC SaaS Platform
 # Запускает Docker контейнеры, Backend API и Frontend
 
 param(
@@ -102,3 +102,4 @@ else {
     # Запуск backend и frontend одновременно (разработка)
     npm run dev:full
 }
+
