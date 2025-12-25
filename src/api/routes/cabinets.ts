@@ -2,11 +2,12 @@ import express, { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import rateLimit from 'express-rate-limit';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { getPool } from '../../database';
 import { createError } from '../../middleware/errorHandler';
 import { logger } from '../../utils/logger';
-import { generateConfirmationCode, generateSessionToken, verifySecret } from '../../utils/crypto';
-import { generateDeviceFingerprint, formatPublicKey } from '../../utils/ed25519';
+import { generateConfirmationCode, generateSessionToken, verifySecret, hashSecret } from '../../utils/crypto';
+import { generateDeviceFingerprint, formatPublicKey, verifySignature } from '../../utils/ed25519';
 
 const router = express.Router();
 
@@ -357,6 +358,123 @@ router.post('/authorize-device', async (req: Request, res: Response, next: NextF
       device_id: deviceId,
       cabinet_id: cabinetId,
       message: 'Device authorized successfully'
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      // Обработка ошибок валидации Zod
+      const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      return next(createError(`Validation error: ${errorMessage}`, 400));
+    }
+    next(error);
+  }
+});
+
+// Схема валидации для входа в кабинет
+const cabinetAccessSchema = z.object({
+  signature: z.string().min(1, 'signature is required'),
+  message: z.string().min(1, 'message is required'),
+  device_fingerprint: z.string().min(1, 'device_fingerprint is required')
+});
+
+/**
+ * POST /api/cabinets/access
+ * Вход в кабинет с использованием cabinet_secret и Ed25519 подписи
+ * 
+ * Headers:
+ *   Authorization: Bearer <cabinet_secret>
+ * 
+ * Body:
+ * {
+ *   signature: string (Ed25519 подпись в hex)
+ *   message: string (сообщение для подписи)
+ *   device_fingerprint: string (SHA-256 хеш)
+ * }
+ * 
+ * Response:
+ * {
+ *   accessToken: string (JWT токен)
+ *   cabinet_id: uuid
+ *   expires_in: string
+ * }
+ */
+router.post('/access', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    
+    // Получение cabinet_secret из заголовка Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw createError('Authorization header with Bearer token (cabinet_secret) is required', 401);
+    }
+    
+    const cabinetSecret = authHeader.substring(7); // Убираем "Bearer "
+    
+    // Валидация входных данных
+    const { signature, message, device_fingerprint } = cabinetAccessSchema.parse(req.body);
+    
+    // Проверка cabinet_secret
+    const cabinetSecretHash = hashSecret(cabinetSecret);
+    const cabinetResult = await pool.query(
+      `SELECT id FROM cabinets WHERE cabinet_secret_hash = $1`,
+      [cabinetSecretHash]
+    );
+    
+    if (cabinetResult.rows.length === 0) {
+      throw createError('Invalid cabinet_secret', 401);
+    }
+    
+    const cabinetId = cabinetResult.rows[0].id;
+    
+    // Проверка device_fingerprint - устройство должно быть авторизовано
+    const deviceResult = await pool.query(
+      `SELECT id, public_key, cabinet_id
+       FROM authorized_devices
+       WHERE device_fingerprint = $1 AND cabinet_id = $2`,
+      [device_fingerprint, cabinetId]
+    );
+    
+    if (deviceResult.rows.length === 0) {
+      throw createError('Device not authorized for this cabinet', 403);
+    }
+    
+    const device = deviceResult.rows[0];
+    
+    // Проверка Ed25519 подписи
+    const formattedPublicKey = formatPublicKey(device.public_key);
+    const isValidSignature = await verifySignature(message, signature, formattedPublicKey);
+    
+    if (!isValidSignature) {
+      throw createError('Invalid Ed25519 signature', 401);
+    }
+    
+    // Генерация JWT токена для доступа к API
+    const accessToken = jwt.sign(
+      { 
+        cabinetId: cabinetId,
+        deviceId: device.id,
+        deviceFingerprint: device_fingerprint,
+        type: 'cabinet'
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' } as SignOptions
+    );
+    
+    // Обновление last_used_at
+    await pool.query(
+      `UPDATE authorized_devices
+       SET last_used_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [device.id]
+    );
+    
+    logger.info(`Cabinet access granted: cabinet_id=${cabinetId}, device_id=${device.id}`);
+    
+    res.status(200).json({
+      accessToken,
+      cabinet_id: cabinetId,
+      device_id: device.id,
+      expires_in: process.env.JWT_EXPIRES_IN || '15m',
+      message: 'Access granted successfully'
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
