@@ -2,11 +2,14 @@ import * as ed25519Lib from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2.js';
 import crypto from 'crypto';
 
-// Настройка SHA-512 для Ed25519 (должно быть сделано до импорта функций)
-(ed25519Lib.etc as any).sha512Sync = (...m: Uint8Array[]) => sha512(ed25519Lib.etc.concatBytes(...m));
-(ed25519Lib.etc as any).sha512Async = (...m: Uint8Array[]) => Promise.resolve(sha512(ed25519Lib.etc.concatBytes(...m)));
+// Настройка SHA-512 для Ed25519
+// КРИТИЧЕСКИ ВАЖНО: настройка должна происходить до первого использования библиотеки
+if (!ed25519Lib.hashes.sha512) {
+  ed25519Lib.hashes.sha512 = (m: Uint8Array) => sha512(m);
+  ed25519Lib.hashes.sha512Async = (m: Uint8Array) => Promise.resolve(sha512(m));
+}
 
-// Теперь импортируем функции после настройки
+// Импортируем функции после настройки
 const { sign, verify } = ed25519Lib;
 
 /**
