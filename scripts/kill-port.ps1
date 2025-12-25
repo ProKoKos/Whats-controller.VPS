@@ -12,12 +12,17 @@ $connections = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContin
 
 if ($connections) {
     $processes = $connections | Select-Object -Unique -ExpandProperty OwningProcess
-    foreach ($pid in $processes) {
-        $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+    foreach ($processId in $processes) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
         if ($process) {
-            Write-Host "Найден процесс: $($process.ProcessName) (PID: $pid)" -ForegroundColor Cyan
-            $process.Kill()
-            Write-Host "   Процесс остановлен" -ForegroundColor Green
+            Write-Host "Найден процесс: $($process.ProcessName) (PID: $processId)" -ForegroundColor Cyan
+            try {
+                $process.Kill()
+                Write-Host "   Процесс остановлен" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "   Не удалось остановить процесс (возможно, недостаточно прав)" -ForegroundColor Yellow
+            }
         }
     }
 }
