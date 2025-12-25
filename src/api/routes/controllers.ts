@@ -5,10 +5,144 @@ import { getPool } from '../../database';
 import { createError } from '../../middleware/errorHandler';
 import { authenticateToken } from '../../middleware/auth';
 import { logger } from '../../utils/logger';
+import {
+  generateControllerSecret,
+  hashSecret
+} from '../../utils/crypto';
 
 const router = express.Router();
 
-// All routes require authentication
+// Схема валидации для подтверждения активации
+const confirmActivationSchema = z.object({
+  activation_code: z.string()
+    .min(12)
+    .max(12)
+    .regex(/^[A-Za-z0-9]{12}$/, 'Activation code must be exactly 12 alphanumeric characters'),
+  device_authorization_code: z.string()
+    .length(6)
+    .regex(/^\d{6}$/, 'Device authorization code must be exactly 6 digits'),
+  mac_address: z.string()
+    .regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/, 'Invalid MAC address format'),
+  firmware_version: z.string().optional()
+});
+
+/**
+ * POST /api/controllers/confirm-activation
+ * Подтверждение активации контроллера
+ * 
+ * Этот эндпоинт НЕ требует авторизации, так как контроллер еще не активирован
+ * 
+ * Body:
+ * {
+ *   activation_code: string (12 символов)
+ *   device_authorization_code: string (6 цифр)
+ *   mac_address: string (формат MAC адреса)
+ *   firmware_version?: string
+ * }
+ * 
+ * Response:
+ * {
+ *   controller_id: uuid
+ *   controller_secret: string
+ *   cabinet_id: uuid
+ * }
+ */
+router.post('/confirm-activation', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    
+    // Валидация входных данных
+    const { activation_code, device_authorization_code, mac_address, firmware_version } = confirmActivationSchema.parse(req.body);
+    
+    const macUpper = mac_address.toUpperCase().replace(/[:-]/g, ':');
+    
+    // Поиск pending_activation
+    const pendingResult = await pool.query(
+      `SELECT pa.id, pa.cabinet_id, pa.device_authorization_code, pa.controller_mac, pa.expires_at
+       FROM pending_activations pa
+       WHERE pa.activation_code = $1 AND pa.expires_at > CURRENT_TIMESTAMP`,
+      [activation_code]
+    );
+    
+    if (pendingResult.rows.length === 0) {
+      throw createError('Activation code not found or expired', 404);
+    }
+    
+    const pending = pendingResult.rows[0];
+    
+    // Проверка device_authorization_code
+    if (pending.device_authorization_code !== device_authorization_code) {
+      throw createError('Invalid device authorization code', 401);
+    }
+    
+    // Проверка MAC адреса (должен совпадать с тем, что был указан при инициации)
+    if (pending.controller_mac && pending.controller_mac !== macUpper) {
+      throw createError('MAC address does not match the one used during activation initiation', 400);
+    }
+    
+    // Проверка: контроллер с таким MAC уже существует и активирован?
+    const existingController = await pool.query(
+      `SELECT id, is_active, cabinet_id 
+       FROM controllers 
+       WHERE mac_address = $1`,
+      [macUpper]
+    );
+    
+    if (existingController.rows.length > 0) {
+      const controller = existingController.rows[0];
+      if (controller.is_active) {
+        throw createError('Controller with this MAC address is already activated', 409);
+      }
+      // Если контроллер существует, но не активирован, удаляем его перед созданием нового
+      await pool.query('DELETE FROM controllers WHERE id = $1', [controller.id]);
+    }
+    
+    // Генерация controller_secret
+    const controllerSecret = generateControllerSecret();
+    const controllerSecretHash = hashSecret(controllerSecret);
+    
+    // Создание записи контроллера
+    const controllerResult = await pool.query(
+      `INSERT INTO controllers 
+       (cabinet_id, mac_address, controller_secret_hash, firmware_version, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       RETURNING id`,
+      [pending.cabinet_id, macUpper, controllerSecretHash, firmware_version || null]
+    );
+    
+    const controllerId = controllerResult.rows[0].id;
+    
+    // Обновление last_activity кабинета
+    await pool.query(
+      `UPDATE cabinets SET last_activity = CURRENT_TIMESTAMP WHERE id = $1`,
+      [pending.cabinet_id]
+    );
+    
+    // Удаление записи из pending_activations
+    await pool.query(
+      'DELETE FROM pending_activations WHERE id = $1',
+      [pending.id]
+    );
+    
+    logger.info(`Controller activated: controller_id=${controllerId}, cabinet_id=${pending.cabinet_id}, mac=${macUpper}`);
+    
+    // Формируем ответ
+    res.status(200).json({
+      controller_id: controllerId,
+      controller_secret: controllerSecret,
+      cabinet_id: pending.cabinet_id,
+      message: 'Controller activated successfully'
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      return next(createError(`Validation error: ${errorMessage}`, 400));
+    }
+    next(error);
+  }
+});
+
+// All other routes require authentication
 router.use(authenticateToken);
 
 const activateControllerSchema = z.object({

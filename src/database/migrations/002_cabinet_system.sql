@@ -22,6 +22,10 @@ ALTER TABLE controllers
   ADD COLUMN IF NOT EXISTS cabinet_id UUID REFERENCES cabinets(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS controller_secret_hash VARCHAR(255) UNIQUE;
 
+-- Удаляем NOT NULL constraint с user_id (для обратной совместимости оставляем колонку)
+ALTER TABLE controllers 
+  ALTER COLUMN user_id DROP NOT NULL;
+
 -- Создаем индекс для cabinet_id
 CREATE INDEX IF NOT EXISTS idx_controllers_cabinet_id ON controllers(cabinet_id);
 CREATE INDEX IF NOT EXISTS idx_controllers_secret_hash ON controllers(controller_secret_hash);
