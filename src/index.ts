@@ -17,6 +17,7 @@ import controllerRoutes from './api/routes/controllers';
 import notificationRoutes from './api/routes/notifications';
 import metricsRoutes from './api/routes/metrics';
 import activationRoutes from './api/routes/activation';
+import cabinetRoutes from './api/routes/cabinets';
 import { createProxyRouter } from './api/routes/proxy';
 
 // Tunnel service
@@ -62,6 +63,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/activation', activationRoutes);
 app.use('/api/controllers', controllerRoutes);
+app.use('/api/cabinets', cabinetRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/metrics', metricsRoutes);
 
