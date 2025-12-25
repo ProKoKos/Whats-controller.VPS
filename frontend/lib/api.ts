@@ -191,6 +191,8 @@ export class ApiClient {
     });
   }
 
+  // Legacy method - deprecated, use initiateActivation instead
+  // @deprecated Use initiateActivation for new activation flow
   async activateController(mac: string, firmwareVersion?: string) {
     return this.request<{
       controllerId: string;
@@ -243,7 +245,16 @@ export class ApiClient {
     });
   }
 
+  // ============================================
   // Cabinet endpoints
+  // ============================================
+
+  /**
+   * Запрос доступа к кабинету
+   * Генерирует access_request_code для подтверждения на контроллере
+   * @param cabinetId ID кабинета
+   * @returns access_request_code для ввода на контроллере
+   */
   async requestCabinetAccess(cabinetId: string) {
     return this.request<{
       access_request_code: string;
@@ -257,6 +268,16 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Авторизация устройства для доступа к кабинету
+   * @param sessionToken Токен сессии, полученный после подтверждения на контроллере
+   * @param deviceFingerprint Fingerprint устройства
+   * @param publicKey Публичный ключ Ed25519 устройства
+   * @param userAgent User-Agent браузера
+   * @param screenResolution Разрешение экрана
+   * @param timezone Часовой пояс
+   * @returns device_id и cabinet_id
+   */
   async authorizeDevice(
     sessionToken: string,
     deviceFingerprint: string,
@@ -282,6 +303,14 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Вход в кабинет с использованием cabinet_secret и Ed25519 подписи
+   * @param cabinetSecret Секрет кабинета
+   * @param signature Ed25519 подпись сообщения
+   * @param message Сообщение для подписи
+   * @param deviceFingerprint Fingerprint устройства
+   * @returns JWT access token для доступа к API кабинета
+   */
   async accessCabinet(
     cabinetSecret: string,
     signature: string,
@@ -307,8 +336,18 @@ export class ApiClient {
     });
   }
 
+  // ============================================
   // Cabinet-specific endpoints
+  // ============================================
+
+  /**
+   * Получение списка контроллеров кабинета
+   * Использует cabinet_access_token для авторизации
+   * @param cabinetId ID кабинета (используется для фильтрации, если API поддерживает)
+   * @returns Список контроллеров кабинета
+   */
   async getCabinetControllers(cabinetId: string) {
+    // API автоматически фильтрует по cabinet_id на основе токена
     return this.request<{
       controllers: Array<{
         id: string;
@@ -320,17 +359,24 @@ export class ApiClient {
         createdAt: string;
         updatedAt: string;
       }>;
-    }>(`/controllers?cabinet_id=${cabinetId}`, {
+    }>('/controllers', {
       method: 'GET',
     });
   }
 
   async getAuthorizedDevices(cabinetId: string) {
-    // TODO: Добавить эндпоинт для получения авторизованных устройств
-    // Пока возвращаем пустой массив
+    // TODO: Добавить эндпоинт GET /api/cabinets/:id/devices для получения авторизованных устройств
+    // Пока возвращаем пустой массив, так как эндпоинт еще не реализован
     return Promise.resolve({
       devices: []
     });
+  }
+
+  // Cabinet info endpoint (if needed)
+  async getCabinetInfo(cabinetId: string) {
+    // TODO: Добавить эндпоинт GET /api/cabinets/:id для получения информации о кабинете
+    // Пока не реализовано
+    throw new Error('Cabinet info endpoint not implemented yet');
   }
 
   // Logout
