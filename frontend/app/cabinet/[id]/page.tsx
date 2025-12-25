@@ -162,6 +162,11 @@ export default function CabinetPage() {
         localStorage.setItem('cabinet_id', response.cabinet_id);
       }
 
+      // Сохранение cabinet_id для использования в дашборде
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cabinet_id', response.cabinet_id);
+      }
+
       // Переход на дашборд
       router.push(`/cabinet/${cabinetId}/dashboard`);
     } catch (err: any) {

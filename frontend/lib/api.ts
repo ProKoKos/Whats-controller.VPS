@@ -54,9 +54,14 @@ export class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const token = typeof window !== 'undefined' 
+    // Проверяем наличие cabinet_access_token (приоритет) или accessToken (legacy)
+    const cabinetToken = typeof window !== 'undefined' 
+      ? localStorage.getItem('cabinet_access_token') 
+      : null;
+    const userToken = typeof window !== 'undefined' 
       ? localStorage.getItem('accessToken') 
       : null;
+    const token = cabinetToken || userToken;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -302,11 +307,39 @@ export class ApiClient {
     });
   }
 
+  // Cabinet-specific endpoints
+  async getCabinetControllers(cabinetId: string) {
+    return this.request<{
+      controllers: Array<{
+        id: string;
+        macAddress: string;
+        firmwareVersion?: string;
+        name: string;
+        isActive: boolean;
+        lastSeenAt?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>(`/controllers?cabinet_id=${cabinetId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getAuthorizedDevices(cabinetId: string) {
+    // TODO: Добавить эндпоинт для получения авторизованных устройств
+    // Пока возвращаем пустой массив
+    return Promise.resolve({
+      devices: []
+    });
+  }
+
   // Logout
   logout() {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem('cabinet_access_token');
+      localStorage.removeItem('cabinet_id');
     }
   }
 }
