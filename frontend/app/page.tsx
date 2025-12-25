@@ -74,7 +74,7 @@ export default function HomePage() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button asChild size="lg" className="text-lg px-8">
-              <Link href="/register">Регистрация</Link>
+              <Link href="/activate">Активировать контроллер</Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="text-lg px-8">
               <Link href="/login">Вход в личный кабинет</Link>

@@ -214,6 +214,94 @@ export class ApiClient {
     });
   }
 
+  // Activation endpoints
+  async initiateActivation(
+    activationCode: string,
+    macAddress: string,
+    action: 'create_cabinet' | 'add_to_cabinet',
+    cabinetSecret?: string
+  ) {
+    return this.request<{
+      device_authorization_code: string;
+      expires_at: string;
+      cabinet_secret?: string;
+      cabinet_id?: string;
+      message: string;
+    }>('/activation/initiate', {
+      method: 'POST',
+      body: JSON.stringify({
+        activation_code: activationCode,
+        mac_address: macAddress,
+        action: action,
+        cabinet_secret: cabinetSecret,
+      }),
+    });
+  }
+
+  // Cabinet endpoints
+  async requestCabinetAccess(cabinetId: string) {
+    return this.request<{
+      access_request_code: string;
+      expires_at: string;
+      message: string;
+    }>('/cabinets/request-access', {
+      method: 'POST',
+      body: JSON.stringify({
+        cabinet_id: cabinetId,
+      }),
+    });
+  }
+
+  async authorizeDevice(
+    sessionToken: string,
+    deviceFingerprint: string,
+    publicKey: string,
+    userAgent?: string,
+    screenResolution?: string,
+    timezone?: string
+  ) {
+    return this.request<{
+      device_id: string;
+      cabinet_id: string;
+      message: string;
+    }>('/cabinets/authorize-device', {
+      method: 'POST',
+      body: JSON.stringify({
+        session_token: sessionToken,
+        device_fingerprint: deviceFingerprint,
+        public_key: publicKey,
+        user_agent: userAgent,
+        screen_resolution: screenResolution,
+        timezone: timezone,
+      }),
+    });
+  }
+
+  async accessCabinet(
+    cabinetSecret: string,
+    signature: string,
+    message: string,
+    deviceFingerprint: string
+  ) {
+    return this.request<{
+      accessToken: string;
+      cabinet_id: string;
+      device_id: string;
+      expires_in: string;
+      message: string;
+    }>('/cabinets/access', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cabinetSecret}`,
+      },
+      body: JSON.stringify({
+        signature: signature,
+        message: message,
+        device_fingerprint: deviceFingerprint,
+      }),
+    });
+  }
+
   // Logout
   logout() {
     if (typeof window !== 'undefined') {
