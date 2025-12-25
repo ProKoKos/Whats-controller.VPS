@@ -54,14 +54,17 @@ export class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    // Проверяем наличие cabinet_access_token (приоритет) или accessToken (legacy)
+    // Проверяем наличие токена (приоритет: superadmin > cabinet > user)
+    const superadminToken = typeof window !== 'undefined' 
+      ? localStorage.getItem('superadmin_access_token') 
+      : null;
     const cabinetToken = typeof window !== 'undefined' 
       ? localStorage.getItem('cabinet_access_token') 
       : null;
     const userToken = typeof window !== 'undefined' 
       ? localStorage.getItem('accessToken') 
       : null;
-    const token = cabinetToken || userToken;
+    const token = superadminToken || cabinetToken || userToken;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -379,6 +382,182 @@ export class ApiClient {
     throw new Error('Cabinet info endpoint not implemented yet');
   }
 
+  // ============================================
+  // Superadmin endpoints
+  // ============================================
+
+  /**
+   * Вход суперадмина
+   * @param username Имя пользователя суперадмина
+   * @param password Пароль суперадмина
+   * @returns JWT токен для доступа к API суперадмина
+   */
+  async superadminLogin(username: string, password: string) {
+    return this.request<{
+      accessToken: string;
+      superadmin: {
+        id: string;
+        username: string;
+      };
+      expires_in: string;
+    }>('/superadmin/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  }
+
+  /**
+   * Получение профиля суперадмина
+   * @returns Информация о суперадмине
+   */
+  async getSuperadminProfile() {
+    return this.request<{
+      id: string;
+      username: string;
+      isActive: boolean;
+      lastLoginAt?: string;
+      createdAt: string;
+      updatedAt: string;
+    }>('/superadmin/profile', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Смена логина/пароля суперадмина
+   * @param username Новое имя пользователя (опционально)
+   * @param password Новый пароль (опционально)
+   * @param currentPassword Текущий пароль (обязательно)
+   */
+  async changeSuperadminCredentials(
+    currentPassword: string,
+    username?: string,
+    password?: string
+  ) {
+    return this.request<{
+      message: string;
+    }>('/superadmin/change-credentials', {
+      method: 'PUT',
+      body: JSON.stringify({
+        username,
+        password,
+        currentPassword,
+      }),
+    });
+  }
+
+  /**
+   * Получение списка всех кабинетов
+   * @returns Список кабинетов с количеством контроллеров
+   */
+  async getSuperadminCabinets() {
+    return this.request<{
+      cabinets: Array<{
+        id: string;
+        createdAt: string;
+        lastActivity?: string;
+        controllerCount: number;
+      }>;
+    }>('/superadmin/cabinets', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Получение деталей кабинета
+   * @param cabinetId ID кабинета
+   * @returns Детальная информация о кабинете и его контроллерах
+   */
+  async getSuperadminCabinet(cabinetId: string) {
+    return this.request<{
+      id: string;
+      createdAt: string;
+      lastActivity?: string;
+      controllers: Array<{
+        id: string;
+        macAddress: string;
+        firmwareVersion?: string;
+        name: string;
+        isActive: boolean;
+        lastSeenAt?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>(`/superadmin/cabinets/${cabinetId}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Удаление кабинета
+   * @param cabinetId ID кабинета
+   */
+  async deleteSuperadminCabinet(cabinetId: string) {
+    return this.request<{
+      message: string;
+      cabinetId: string;
+      deletedControllers: number;
+    }>(`/superadmin/cabinets/${cabinetId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Получение списка всех контроллеров
+   * @returns Список всех контроллеров в системе
+   */
+  async getSuperadminControllers() {
+    return this.request<{
+      controllers: Array<{
+        id: string;
+        macAddress: string;
+        firmwareVersion?: string;
+        name: string;
+        isActive: boolean;
+        lastSeenAt?: string;
+        createdAt: string;
+        updatedAt: string;
+        cabinetId?: string;
+      }>;
+    }>('/superadmin/controllers', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Получение деталей контроллера
+   * @param controllerId ID контроллера
+   * @returns Детальная информация о контроллере
+   */
+  async getSuperadminController(controllerId: string) {
+    return this.request<{
+      id: string;
+      macAddress: string;
+      firmwareVersion?: string;
+      name: string;
+      isActive: boolean;
+      lastSeenAt?: string;
+      createdAt: string;
+      updatedAt: string;
+      cabinetId?: string;
+    }>(`/superadmin/controllers/${controllerId}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Сброс контроллера (отвязка от кабинета)
+   * @param controllerId ID контроллера
+   */
+  async resetSuperadminController(controllerId: string) {
+    return this.request<{
+      message: string;
+      controllerId: string;
+    }>(`/superadmin/controllers/${controllerId}/reset`, {
+      method: 'POST',
+    });
+  }
+
   // Logout
   logout() {
     if (typeof window !== 'undefined') {
@@ -386,6 +565,9 @@ export class ApiClient {
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('cabinet_access_token');
       localStorage.removeItem('cabinet_id');
+      localStorage.removeItem('superadmin_access_token');
+      localStorage.removeItem('superadmin_id');
+      localStorage.removeItem('superadmin_username');
     }
   }
 }
