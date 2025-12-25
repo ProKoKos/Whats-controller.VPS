@@ -4,14 +4,17 @@ const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone', // Для Docker deployment
   async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: process.env.NEXT_PUBLIC_API_URL 
-          ? `${process.env.NEXT_PUBLIC_API_URL}/:path*`
-          : '/api/:path*', // В продакшене используем относительный путь через Caddy
-      },
-    ];
+    // В режиме разработки проксируем запросы на backend
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return [
+        {
+          source: '/api/:path*',
+          destination: `${process.env.NEXT_PUBLIC_API_URL}/:path*`,
+        },
+      ];
+    }
+    // В продакшене используем относительный путь через Caddy
+    return [];
   },
 };
 

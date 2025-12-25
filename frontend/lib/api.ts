@@ -34,7 +34,27 @@ export class ApiClient {
       headers,
     });
 
-    const data = await response.json();
+    // Проверяем Content-Type перед парсингом JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      const error: ApiError = {
+        message: `Сервер вернул не JSON ответ. Возможно, backend не запущен или URL неправильный. Статус: ${response.status}`,
+        status: response.status,
+      };
+      throw error;
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      const error: ApiError = {
+        message: 'Ошибка парсинга ответа сервера. Возможно, backend не запущен.',
+        status: response.status,
+      };
+      throw error;
+    }
 
     if (!response.ok) {
       const error: ApiError = {
