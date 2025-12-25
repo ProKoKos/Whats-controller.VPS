@@ -5,11 +5,12 @@ import { getPool } from '../database';
 import { getRedisClient } from '../services/redis';
 import { logger } from '../utils/logger';
 import { NotificationService } from '../services/notifications';
+import { verifySecret } from '../utils/crypto';
 
 interface TunnelConnection {
   ws: WebSocket;
   controllerId: string;
-  userId: string;
+  cabinetId: string | null;
   macAddress: string;
   connectedAt: Date;
 }
@@ -33,8 +34,7 @@ interface HttpResponseMessage {
 
 interface RegisterMessage {
   type: 'register';
-  token?: string;
-  mac?: string;
+  controller_secret: string;
   firmwareVersion?: string;
 }
 
@@ -92,93 +92,68 @@ export class TunnelService {
     const pool = getPool();
 
     try {
-      let controllerId: string;
-      let userId: string;
-      let macAddress: string;
-
-      // If token provided, it's activation
-      if (message.token) {
-        const result = await pool.query(
-          `SELECT c.id, c.user_id, c.mac_address 
-           FROM controllers c
-           WHERE c.activation_token = $1 AND c.is_active = false`,
-          [message.token]
-        );
-
-        if (result.rows.length === 0) {
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Invalid or expired activation token'
-          }));
-          ws.close();
-          return;
-        }
-
-        const controller = result.rows[0];
-        controllerId = controller.id;
-        userId = controller.user_id;
-        macAddress = controller.mac_address;
-
-        // Activate controller
-        await pool.query(
-          `UPDATE controllers 
-           SET is_active = true, 
-               activation_token = NULL,
-               last_seen_at = CURRENT_TIMESTAMP,
-               firmware_version = COALESCE($1, firmware_version),
-               updated_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [message.firmwareVersion, controllerId]
-        );
-
-        logger.info(`Controller activated: ${macAddress} (${controllerId})`);
-      } else if (message.mac) {
-        // Regular connection with MAC address
-        const result = await pool.query(
-          `SELECT c.id, c.user_id, c.mac_address 
-           FROM controllers c
-           WHERE c.mac_address = $1 AND c.is_active = true`,
-          [message.mac.toUpperCase()]
-        );
-
-        if (result.rows.length === 0) {
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Controller not found or not activated'
-          }));
-          ws.close();
-          return;
-        }
-
-        const controller = result.rows[0];
-        controllerId = controller.id;
-        userId = controller.user_id;
-        macAddress = controller.mac_address;
-
-        // Update last seen
-        await pool.query(
-          `UPDATE controllers 
-           SET last_seen_at = CURRENT_TIMESTAMP,
-               firmware_version = COALESCE($1, firmware_version),
-               updated_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [message.firmwareVersion, controllerId]
-        );
-      } else {
+      // Validate controller_secret
+      if (!message.controller_secret || typeof message.controller_secret !== 'string') {
         ws.send(JSON.stringify({
           type: 'error',
-          message: 'Either token or mac required'
+          message: 'controller_secret is required'
         }));
         ws.close();
         return;
       }
 
+      // Find controller by matching controller_secret_hash
+      // Note: We cannot directly query by hash since we need to verify the secret.
+      // This requires checking all active controllers. For better performance with many controllers,
+      // consider adding a cache layer or using a different authentication mechanism.
+      const result = await pool.query(
+        `SELECT c.id, c.cabinet_id, c.mac_address, c.controller_secret_hash, c.is_active
+         FROM controllers c
+         WHERE c.is_active = true AND c.controller_secret_hash IS NOT NULL
+         ORDER BY c.last_seen_at DESC NULLS LAST
+         LIMIT 1000`
+      );
+
+      let controllerId: string | null = null;
+      let cabinetId: string | null = null;
+      let macAddress: string | null = null;
+
+      // Find matching controller by verifying the secret
+      // Using timing-safe comparison to prevent timing attacks
+      for (const row of result.rows) {
+        if (verifySecret(message.controller_secret, row.controller_secret_hash)) {
+          controllerId = row.id;
+          cabinetId = row.cabinet_id;
+          macAddress = row.mac_address;
+          break;
+        }
+      }
+
+      if (!controllerId) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Invalid controller_secret or controller not activated'
+        }));
+        ws.close();
+        return;
+      }
+
+      // Update last seen and firmware version
+      await pool.query(
+        `UPDATE controllers 
+         SET last_seen_at = CURRENT_TIMESTAMP,
+             firmware_version = COALESCE($1, firmware_version),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [message.firmwareVersion, controllerId]
+      );
+
       // Store connection
       const connection: TunnelConnection = {
         ws,
         controllerId,
-        userId,
-        macAddress,
+        cabinetId,
+        macAddress: macAddress || 'unknown',
         connectedAt: new Date()
       };
       this.connections.set(connectionId, connection);
@@ -207,8 +182,14 @@ export class TunnelService {
 
       logger.info(`Controller registered: ${macAddress} (${controllerId})`);
 
-      // Send notification about controller coming online
-      await NotificationService.notifyControllerOnline(userId, controllerId, macAddress);
+      // Send notification about controller coming online (if cabinet_id exists)
+      // Note: NotificationService still uses userId, so we'll skip notifications for now
+      // TODO: Update NotificationService to use cabinet_id
+      if (cabinetId) {
+        // For now, we'll log instead of sending notification
+        // await NotificationService.notifyControllerOnline(cabinetId, controllerId, macAddress || 'unknown');
+        logger.info(`Controller ${controllerId} (${macAddress}) came online for cabinet ${cabinetId}`);
+      }
     } catch (error) {
       logger.error('Error during controller registration:', error);
       ws.send(JSON.stringify({
@@ -257,12 +238,18 @@ export class TunnelService {
       }
       await redis.del(`session:${connectionId}:controller`);
 
-      // Send notification about controller going offline
-      await NotificationService.notifyControllerOffline(
-        connection.userId,
-        connection.controllerId,
-        connection.macAddress
-      );
+      // Send notification about controller going offline (if cabinet_id exists)
+      // Note: NotificationService still uses userId, so we'll skip notifications for now
+      // TODO: Update NotificationService to use cabinet_id
+      if (connection.cabinetId) {
+        // For now, we'll log instead of sending notification
+        // await NotificationService.notifyControllerOffline(
+        //   connection.cabinetId,
+        //   connection.controllerId,
+        //   connection.macAddress
+        // );
+        logger.info(`Controller ${connection.controllerId} (${connection.macAddress}) went offline for cabinet ${connection.cabinetId}`);
+      }
 
       this.connections.delete(connectionId);
     }
