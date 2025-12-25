@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../../database';
 import { createError } from '../../middleware/errorHandler';
 import { authenticateToken } from '../../middleware/auth';
+import { authenticateCabinet, checkControllerAccess } from '../../middleware/cabinetAuth';
 import { logger } from '../../utils/logger';
 import {
   generateControllerSecret,
@@ -143,27 +144,63 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
 });
 
 // All other routes require authentication
-router.use(authenticateToken);
+// Поддерживаем оба типа авторизации: старую (users) и новую (cabinets)
+// Сначала пробуем кабинет, если не получилось - пробуем пользователя
+router.use((req: Request, res: Response, next: NextFunction) => {
+  // Пробуем авторизацию кабинета
+  try {
+    authenticateCabinet(req, res, () => {
+      // Если успешно, продолжаем
+      next();
+    });
+  } catch (cabinetError) {
+    // Если не получилось, пробуем старую авторизацию пользователя
+    try {
+      authenticateToken(req, res, next);
+    } catch (userError) {
+      // Если и это не получилось, возвращаем ошибку кабинета (более специфичную)
+      next(cabinetError);
+    }
+  }
+});
 
 const activateControllerSchema = z.object({
   mac: z.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/),
   firmwareVersion: z.string().optional()
 });
 
-// Get user's controllers
+// Get user's or cabinet's controllers
+// Поддерживает как старую авторизацию (userId), так и новую (cabinetId)
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
+    const cabinetId = (req as any).cabinetId;
     const pool = getPool();
 
-    const result = await pool.query(
-      `SELECT id, mac_address, firmware_version, name, is_active, 
-              last_seen_at, created_at, updated_at
-       FROM controllers 
-       WHERE user_id = $1 
-       ORDER BY created_at DESC`,
-      [userId]
-    );
+    let result;
+    if (cabinetId) {
+      // Новая система кабинетов
+      result = await pool.query(
+        `SELECT id, mac_address, firmware_version, name, is_active, 
+                last_seen_at, created_at, updated_at
+         FROM controllers 
+         WHERE cabinet_id = $1 
+         ORDER BY created_at DESC`,
+        [cabinetId]
+      );
+    } else if (userId) {
+      // Старая система пользователей (для обратной совместимости)
+      result = await pool.query(
+        `SELECT id, mac_address, firmware_version, name, is_active, 
+                last_seen_at, created_at, updated_at
+         FROM controllers 
+         WHERE user_id = $1 
+         ORDER BY created_at DESC`,
+        [userId]
+      );
+    } else {
+      throw createError('Authentication required', 401);
+    }
 
     res.json({
       controllers: result.rows.map(row => ({
@@ -245,16 +282,32 @@ router.post('/activate', async (req: Request, res: Response, next: NextFunction)
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
+    const cabinetId = (req as any).cabinetId;
     const controllerId = req.params.id;
     const pool = getPool();
 
-    const result = await pool.query(
-      `SELECT id, mac_address, firmware_version, name, is_active, 
-              last_seen_at, created_at, updated_at
-       FROM controllers 
-       WHERE id = $1 AND user_id = $2`,
-      [controllerId, userId]
-    );
+    let result;
+    if (cabinetId) {
+      // Новая система кабинетов
+      result = await pool.query(
+        `SELECT id, mac_address, firmware_version, name, is_active, 
+                last_seen_at, created_at, updated_at
+         FROM controllers 
+         WHERE id = $1 AND cabinet_id = $2`,
+        [controllerId, cabinetId]
+      );
+    } else if (userId) {
+      // Старая система пользователей
+      result = await pool.query(
+        `SELECT id, mac_address, firmware_version, name, is_active, 
+                last_seen_at, created_at, updated_at
+         FROM controllers 
+         WHERE id = $1 AND user_id = $2`,
+        [controllerId, userId]
+      );
+    } else {
+      throw createError('Authentication required', 401);
+    }
 
     if (result.rows.length === 0) {
       throw createError('Controller not found', 404);
