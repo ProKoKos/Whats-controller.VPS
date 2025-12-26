@@ -237,6 +237,77 @@ router.get('/:controllerId/verify-pin', async (req: Request, res: Response, next
 });
 
 /**
+ * GET /api/controllers/:controllerId
+ * Получение информации о контроллере
+ * 
+ * Headers:
+ * - X-Device-Signature: Ed25519 подпись запроса (base64)
+ * - X-Device-Public-Key: Ed25519 публичный ключ (base64)
+ * 
+ * Response:
+ * {
+ *   controller_id: uuid
+ *   mac_address: string
+ *   firmware_version?: string
+ *   is_active: boolean
+ *   last_seen_at?: timestamp
+ * }
+ */
+router.get('/:controllerId', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const publicKey = req.devicePublicKey;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
+    }
+    
+    // Обновляем last_used_at
+    await pool.query(
+      `UPDATE authorized_devices SET last_used_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [deviceCheck.rows[0].id]
+    );
+    
+    // Получаем информацию о контроллере
+    const controller = await pool.query(
+      `SELECT id, mac_address, firmware_version, is_active, last_seen_at
+       FROM controllers
+       WHERE id = $1`,
+      [controllerId]
+    );
+    
+    if (controller.rows.length === 0) {
+      return res.status(404).json({ error: 'Controller not found' });
+    }
+    
+    const ctrl = controller.rows[0];
+    
+    res.json({
+      controller_id: ctrl.id,
+      mac_address: ctrl.mac_address,
+      firmware_version: ctrl.firmware_version,
+      is_active: ctrl.is_active,
+      last_seen_at: ctrl.last_seen_at
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
  * Middleware для проверки Ed25519 подписи
  */
 async function verifyDeviceSignature(req: Request, res: Response, next: NextFunction) {

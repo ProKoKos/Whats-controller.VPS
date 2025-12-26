@@ -570,6 +570,99 @@ export class ApiClient {
       localStorage.removeItem('superadmin_username');
     }
   }
+
+  /**
+   * Проверка PIN кода для доступа к контроллеру
+   * @param controllerId ID контроллера
+   * @param pin PIN код (8 цифр)
+   * @returns Результат проверки PIN
+   */
+  async verifyControllerPin(controllerId: string, pin: string) {
+    return this.request<{
+      valid: boolean;
+      expires_at?: string;
+      error?: string;
+    }>(`/controllers/${controllerId}/verify-pin?pin=${encodeURIComponent(pin)}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Привязка устройства к контроллеру через Ed25519
+   * @param controllerId ID контроллера
+   * @param deviceName Имя устройства
+   * @param publicKey Публичный ключ Ed25519 (base64)
+   * @param signature Подпись запроса (base64)
+   * @returns ID привязанного устройства
+   */
+  async authorizeDevice(
+    controllerId: string,
+    deviceName: string,
+    publicKey: string,
+    signature: string
+  ) {
+    return this.request<{
+      device_id: string;
+      message: string;
+    }>(`/controllers/${controllerId}/authorize-device`, {
+      method: 'POST',
+      headers: {
+        'X-Device-Signature': signature,
+        'X-Device-Public-Key': publicKey,
+      },
+      body: JSON.stringify({
+        device_name: deviceName,
+        public_key: publicKey,
+      }),
+    });
+  }
+
+  /**
+   * Получение информации о контроллере (с Ed25519 авторизацией)
+   * @param controllerId ID контроллера
+   * @param signature Подпись запроса (base64)
+   * @param publicKey Публичный ключ (base64)
+   * @returns Информация о контроллере
+   */
+  async getController(controllerId: string, signature: string, publicKey: string) {
+    return this.request<{
+      controller_id: string;
+      mac_address: string;
+      firmware_version?: string;
+      is_active: boolean;
+      last_seen_at?: string;
+    }>(`/controllers/${controllerId}`, {
+      method: 'GET',
+      headers: {
+        'X-Device-Signature': signature,
+        'X-Device-Public-Key': publicKey,
+      },
+    });
+  }
+
+  /**
+   * Список авторизованных устройств для контроллера
+   * @param controllerId ID контроллера
+   * @param signature Подпись запроса (base64)
+   * @param publicKey Публичный ключ (base64)
+   * @returns Список устройств
+   */
+  async getAuthorizedDevices(controllerId: string, signature: string, publicKey: string) {
+    return this.request<{
+      devices: Array<{
+        device_id: string;
+        device_name: string;
+        created_at: string;
+        last_used_at?: string;
+      }>;
+    }>(`/controllers/${controllerId}/authorized-devices`, {
+      method: 'GET',
+      headers: {
+        'X-Device-Signature': signature,
+        'X-Device-Public-Key': publicKey,
+      },
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
