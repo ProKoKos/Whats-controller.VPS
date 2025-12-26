@@ -83,3 +83,22 @@ export function formatPublicKey(publicKey: string): string {
   return publicKey.replace(/^0x/i, '').replace(/\s/g, '');
 }
 
+/**
+ * Проверяет подпись Ed25519 (синхронная версия для base64)
+ * @param signature Подпись в формате Buffer (base64 декодированная)
+ * @param message Сообщение в формате Buffer
+ * @param publicKey Публичный ключ в формате Buffer (base64 декодированный)
+ * @returns true если подпись валидна
+ */
+export function verifyEd25519Signature(
+  signature: Buffer,
+  message: Buffer,
+  publicKey: Buffer
+): boolean {
+  try {
+    return verify(signature, message, publicKey);
+  } catch (error) {
+    return false;
+  }
+}
+

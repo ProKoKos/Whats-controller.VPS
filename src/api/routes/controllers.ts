@@ -1,44 +1,26 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../../database';
 import { createError } from '../../middleware/errorHandler';
-import { authenticateToken } from '../../middleware/auth';
-import { authenticateCabinet, checkControllerAccess } from '../../middleware/cabinetAuth';
 import { logger } from '../../utils/logger';
-import {
-  generateControllerSecret,
-  hashSecret
-} from '../../utils/crypto';
+import { generateControllerSecret, hashSecret, verifySecret } from '../../utils/crypto';
+import { verifyEd25519Signature } from '../../utils/ed25519';
 
 const router = express.Router();
 
-// Схема валидации для подтверждения активации (упрощенная для теста)
-const confirmActivationSchema = z.object({
-  activation_code: z.string()
-    .min(12)
-    .max(12)
-    .regex(/^[A-Za-z0-9]{12}$/, 'Activation code must be exactly 12 alphanumeric characters'),
-  device_authorization_code: z.string()
-    .length(6)
-    .regex(/^\d{6}$/, 'Device authorization code must be exactly 6 digits')
-    .optional(), // Опционально для теста
-  mac_address: z.string()
-    .regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/, 'Invalid MAC address format'),
+// Схема валидации для активации контроллера
+const activateSchema = z.object({
+  mac_address: z.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/, 'Invalid MAC address format'),
   firmware_version: z.string().optional()
 });
 
 /**
- * POST /api/controllers/confirm-activation
- * Подтверждение активации контроллера
- * 
- * Этот эндпоинт НЕ требует авторизации, так как контроллер еще не активирован
+ * POST /api/controllers/activate
+ * Активация контроллера (упрощенная версия)
  * 
  * Body:
  * {
- *   activation_code: string (12 символов)
- *   device_authorization_code: string (6 цифр)
- *   mac_address: string (формат MAC адреса)
+ *   mac_address: string
  *   firmware_version?: string
  * }
  * 
@@ -46,66 +28,30 @@ const confirmActivationSchema = z.object({
  * {
  *   controller_id: uuid
  *   controller_secret: string
- *   cabinet_id: uuid
+ *   pin: string
+ *   pin_expires_at: timestamp
  * }
  */
-router.post('/confirm-activation', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/activate', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const pool = getPool();
     
     // Валидация входных данных
-    const { activation_code, device_authorization_code, mac_address, firmware_version } = confirmActivationSchema.parse(req.body);
+    const { mac_address, firmware_version } = activateSchema.parse(req.body);
     
     const macUpper = mac_address.toUpperCase().replace(/[:-]/g, ':');
     
-    logger.info(`[TEST] Activation attempt: activation_code=${activation_code}, mac=${macUpper}, device_code=${device_authorization_code || 'SKIPPED'}`);
+    logger.info(`[ACTIVATION] Activation attempt: mac=${macUpper}`);
     
-    // Поиск pending_activation (сравниваем без учета регистра)
-    const pendingResult = await pool.query(
-      `SELECT pa.id, pa.cabinet_id, pa.device_authorization_code, pa.controller_mac, pa.cabinet_secret, pa.expires_at
-       FROM pending_activations pa
-       WHERE UPPER(pa.activation_code) = UPPER($1) AND pa.expires_at > CURRENT_TIMESTAMP`,
-      [activation_code]
-    );
-    
-    if (pendingResult.rows.length === 0) {
-      logger.warn(`[TEST] Activation code not found: ${activation_code}`);
-      throw createError('Activation code not found or expired', 404);
-    }
-    
-    const pending = pendingResult.rows[0];
-    
-    // УПРОЩЕННАЯ ВЕРСИЯ: пропускаем проверку device_authorization_code для теста
-    if (device_authorization_code) {
-      // Проверка device_authorization_code (если передан)
-      if (pending.device_authorization_code !== device_authorization_code) {
-        logger.warn(`[TEST] Invalid device code: expected=${pending.device_authorization_code}, got=${device_authorization_code}`);
-        throw createError('Invalid device authorization code', 401);
-      }
-    } else {
-      logger.info(`[TEST] Device authorization code skipped (test mode)`);
-    }
-    
-    // Проверка MAC адреса (должен совпадать с тем, что был указан при инициации)
-    if (pending.controller_mac && pending.controller_mac !== macUpper) {
-      throw createError('MAC address does not match the one used during activation initiation', 400);
-    }
-    
-    // Проверка: контроллер с таким MAC уже существует и активирован?
-    const existingController = await pool.query(
-      `SELECT id, is_active, cabinet_id 
-       FROM controllers 
-       WHERE mac_address = $1`,
+    // Проверка: не активирован ли уже контроллер с таким MAC
+    const existing = await pool.query(
+      'SELECT id FROM controllers WHERE mac_address = $1 AND is_active = true',
       [macUpper]
     );
     
-    if (existingController.rows.length > 0) {
-      const controller = existingController.rows[0];
-      if (controller.is_active) {
-        throw createError('Controller with this MAC address is already activated', 409);
-      }
-      // Если контроллер существует, но не активирован, удаляем его перед созданием нового
-      await pool.query('DELETE FROM controllers WHERE id = $1', [controller.id]);
+    if (existing.rows.length > 0) {
+      logger.warn(`[ACTIVATION] Controller already activated: ${existing.rows[0].id}`);
+      throw createError('Controller with this MAC address is already activated', 409);
     }
     
     // Генерация controller_secret
@@ -113,45 +59,34 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
     const controllerSecretHash = hashSecret(controllerSecret);
     
     // Создание записи контроллера
-    const controllerResult = await pool.query(
-      `INSERT INTO controllers 
-       (cabinet_id, mac_address, controller_secret_hash, firmware_version, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    const result = await pool.query(
+      `INSERT INTO controllers (mac_address, controller_secret_hash, firmware_version, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING id`,
-      [pending.cabinet_id, macUpper, controllerSecretHash, firmware_version || null]
+      [macUpper, controllerSecretHash, firmware_version || null]
     );
     
-    const controllerId = controllerResult.rows[0].id;
+    const controllerId = result.rows[0].id;
     
-    // Обновление last_activity кабинета
+    // Генерация первого PIN
+    const pin = generatePin();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 минут
+    
     await pool.query(
-      `UPDATE cabinets SET last_activity = CURRENT_TIMESTAMP WHERE id = $1`,
-      [pending.cabinet_id]
+      `INSERT INTO controller_pins (controller_id, pin, expires_at)
+       VALUES ($1, $2, $3)`,
+      [controllerId, pin, expiresAt]
     );
     
-    // Удаление записи из pending_activations
-    await pool.query(
-      'DELETE FROM pending_activations WHERE id = $1',
-      [pending.id]
-    );
+    logger.info(`[ACTIVATION] Controller activated: controller_id=${controllerId}, mac=${macUpper}`);
     
-    logger.info(`[TEST] Controller activated successfully: controller_id=${controllerId}, cabinet_id=${pending.cabinet_id}, mac=${macUpper}`);
-    
-    // Формируем ответ
-    // Возвращаем cabinet_secret, если он был сохранен в pending_activations (для нового кабинета)
-    const response: any = {
+    res.json({
       controller_id: controllerId,
       controller_secret: controllerSecret,
-      cabinet_id: pending.cabinet_id,
+      pin: pin,
+      pin_expires_at: expiresAt.toISOString(),
       message: 'Controller activated successfully'
-    };
-    
-    // Если cabinet_secret был сохранен (для нового кабинета), возвращаем его
-    if (pending.cabinet_secret) {
-      response.cabinet_secret = pending.cabinet_secret;
-    }
-    
-    res.status(200).json(response);
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
@@ -161,75 +96,302 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
   }
 });
 
-// All other routes require authentication
-// Поддерживаем оба типа авторизации: старую (users) и новую (cabinets)
-// Сначала пробуем кабинет, если не получилось - пробуем пользователя
-router.use((req: Request, res: Response, next: NextFunction) => {
-  // Пробуем авторизацию кабинета
-  try {
-    authenticateCabinet(req, res, () => {
-      // Если успешно, продолжаем
-      next();
-    });
-  } catch (cabinetError) {
-    // Если не получилось, пробуем старую авторизацию пользователя
-    try {
-      authenticateToken(req, res, next);
-    } catch (userError) {
-      // Если и это не получилось, возвращаем ошибку кабинета (более специфичную)
-      next(cabinetError);
+// Вспомогательная функция для генерации PIN
+function generatePin(): string {
+  const chars = '0123456789';
+  let pin = '';
+  for (let i = 0; i < 8; i++) {
+    pin += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return pin;
+}
+
+// Расширение Request для хранения devicePublicKey
+declare global {
+  namespace Express {
+    interface Request {
+      devicePublicKey?: string;
     }
+  }
+}
+
+/**
+ * GET /api/controllers/:controllerId/pin
+ * Получение PIN кода для доступа к контроллеру на сервере
+ * 
+ * Headers:
+ * - Authorization: Bearer {controller_secret}
+ * 
+ * Response:
+ * {
+ *   pin: string
+ *   expires_at: timestamp
+ * }
+ */
+router.get('/:controllerId/pin', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized. Missing or invalid Authorization header' });
+    }
+    
+    const controllerSecret = authHeader.substring(7);
+    
+    // Проверка controller_secret
+    const controller = await pool.query(
+      `SELECT id, controller_secret_hash FROM controllers WHERE id = $1 AND is_active = true`,
+      [controllerId]
+    );
+    
+    if (controller.rows.length === 0) {
+      return res.status(404).json({ error: 'Controller not found or inactive' });
+    }
+    
+    // Проверка секрета
+    if (!verifySecret(controllerSecret, controller.rows[0].controller_secret_hash)) {
+      return res.status(401).json({ error: 'Invalid controller secret' });
+    }
+    
+    // Проверяем текущий PIN
+    const currentPin = await pool.query(
+      `SELECT pin, expires_at FROM controller_pins
+       WHERE controller_id = $1 AND expires_at > CURRENT_TIMESTAMP
+       ORDER BY created_at DESC LIMIT 1`,
+      [controllerId]
+    );
+    
+    // Если PIN валидный и не истек, возвращаем его
+    if (currentPin.rows.length > 0) {
+      return res.json({
+        pin: currentPin.rows[0].pin,
+        expires_at: currentPin.rows[0].expires_at
+      });
+    }
+    
+    // Если PIN истек или не существует, генерируем новый
+    const newPin = generatePin();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 минут
+    
+    await pool.query(
+      `INSERT INTO controller_pins (controller_id, pin, expires_at)
+       VALUES ($1, $2, $3)`,
+      [controllerId, newPin, expiresAt]
+    );
+    
+    logger.info(`[PIN] New PIN generated for controller ${controllerId}`);
+    
+    res.json({
+      pin: newPin,
+      expires_at: expiresAt.toISOString()
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
-const activateControllerSchema = z.object({
-  mac: z.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/),
-  firmwareVersion: z.string().optional()
+/**
+ * GET /api/controllers/:controllerId/verify-pin
+ * Проверка PIN кода для доступа к контроллеру
+ * 
+ * Query:
+ * - pin: string (8 цифр)
+ * 
+ * Response:
+ * {
+ *   valid: boolean
+ *   expires_at?: timestamp
+ *   error?: string
+ * }
+ */
+router.get('/:controllerId/verify-pin', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const { pin } = req.query;
+    
+    if (!pin || typeof pin !== 'string') {
+      return res.json({ valid: false, error: 'PIN is required' });
+    }
+    
+    const result = await pool.query(
+      `SELECT expires_at FROM controller_pins
+       WHERE controller_id = $1 AND pin = $2 AND expires_at > CURRENT_TIMESTAMP
+       ORDER BY created_at DESC LIMIT 1`,
+      [controllerId, pin]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({ valid: false, error: 'Invalid or expired PIN' });
+    }
+    
+    res.json({
+      valid: true,
+      expires_at: result.rows[0].expires_at
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
-// Get user's or cabinet's controllers
-// Поддерживает как старую авторизацию (userId), так и новую (cabinetId)
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+/**
+ * Middleware для проверки Ed25519 подписи
+ */
+async function verifyDeviceSignature(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
-    const cabinetId = (req as any).cabinetId;
-    const pool = getPool();
-
-    let result;
-    if (cabinetId) {
-      // Новая система кабинетов
-      result = await pool.query(
-        `SELECT id, mac_address, firmware_version, name, is_active, 
-                last_seen_at, created_at, updated_at
-         FROM controllers 
-         WHERE cabinet_id = $1 
-         ORDER BY created_at DESC`,
-        [cabinetId]
-      );
-    } else if (userId) {
-      // Старая система пользователей (для обратной совместимости)
-      result = await pool.query(
-        `SELECT id, mac_address, firmware_version, name, is_active, 
-                last_seen_at, created_at, updated_at
-         FROM controllers 
-         WHERE user_id = $1 
-         ORDER BY created_at DESC`,
-        [userId]
-      );
-    } else {
-      throw createError('Authentication required', 401);
+    const signature = req.headers['x-device-signature'] as string;
+    const publicKey = req.headers['x-device-public-key'] as string;
+    
+    if (!signature || !publicKey) {
+      return res.status(401).json({ error: 'Missing signature or public key' });
     }
+    
+    // Проверка подписи Ed25519
+    // Формируем сообщение для подписи: метод + путь + тело запроса
+    const message = req.method + req.path + JSON.stringify(req.body || {});
+    const isValid = verifyEd25519Signature(
+      Buffer.from(signature, 'base64'),
+      Buffer.from(message),
+      Buffer.from(publicKey, 'base64')
+    );
+    
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    
+    req.devicePublicKey = publicKey;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid signature format' });
+  }
+}
 
+/**
+ * POST /api/controllers/:controllerId/authorize-device
+ * Привязка устройства к контроллеру через Ed25519
+ * 
+ * Headers:
+ * - X-Device-Signature: Ed25519 подпись запроса (base64)
+ * - X-Device-Public-Key: Ed25519 публичный ключ (base64)
+ * 
+ * Body:
+ * {
+ *   device_name?: string
+ *   public_key: string (base64)
+ * }
+ * 
+ * Response:
+ * {
+ *   device_id: uuid
+ *   message: string
+ * }
+ */
+router.post('/:controllerId/authorize-device', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const { device_name, public_key } = req.body;
+    const publicKeyHeader = req.headers['x-device-public-key'] as string;
+    
+    // Проверка, что public_key из body совпадает с public_key из заголовка
+    if (public_key !== publicKeyHeader) {
+      return res.status(400).json({ error: 'Public key mismatch' });
+    }
+    
+    // Проверяем, что контроллер существует
+    const controller = await pool.query(
+      `SELECT id FROM controllers WHERE id = $1 AND is_active = true`,
+      [controllerId]
+    );
+    
+    if (controller.rows.length === 0) {
+      return res.status(404).json({ error: 'Controller not found' });
+    }
+    
+    // Привязываем устройство (первая привязка через Ed25519, PIN не требуется)
+    const result = await pool.query(
+      `INSERT INTO authorized_devices (controller_id, device_name, public_key)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (controller_id, public_key) DO UPDATE
+       SET device_name = $2, last_used_at = CURRENT_TIMESTAMP
+       RETURNING id`,
+      [controllerId, device_name || 'Unnamed Device', public_key]
+    );
+    
+    logger.info(`[DEVICE] Device authorized for controller ${controllerId}: device_id=${result.rows[0].id}`);
+    
     res.json({
-      controllers: result.rows.map(row => ({
-        id: row.id,
-        macAddress: row.mac_address,
-        firmwareVersion: row.firmware_version,
-        name: row.name || `Controller ${row.mac_address}`,
-        isActive: row.is_active,
-        lastSeenAt: row.last_seen_at,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
+      device_id: result.rows[0].id,
+      message: 'Device authorized successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/controllers/:controllerId/authorized-devices
+ * Список авторизованных устройств для контроллера
+ * 
+ * Headers:
+ * - X-Device-Signature: Ed25519 подпись запроса (base64)
+ * - X-Device-Public-Key: Ed25519 публичный ключ (base64)
+ * 
+ * Response:
+ * {
+ *   devices: Array<{
+ *     device_id: uuid
+ *     device_name: string
+ *     created_at: timestamp
+ *     last_used_at: timestamp
+ *   }>
+ * }
+ */
+router.get('/:controllerId/authorized-devices', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const publicKey = req.devicePublicKey;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
+    }
+    
+    // Обновляем last_used_at
+    await pool.query(
+      `UPDATE authorized_devices SET last_used_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [deviceCheck.rows[0].id]
+    );
+    
+    // Получаем список устройств
+    const devices = await pool.query(
+      `SELECT id, device_name, created_at, last_used_at
+       FROM authorized_devices
+       WHERE controller_id = $1
+       ORDER BY created_at DESC`,
+      [controllerId]
+    );
+    
+    res.json({
+      devices: devices.rows.map(device => ({
+        device_id: device.id,
+        device_name: device.device_name,
+        created_at: device.created_at,
+        last_used_at: device.last_used_at
       }))
     });
   } catch (error) {
@@ -237,172 +399,60 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// Activate new controller
-router.post('/activate', async (req: Request, res: Response, next: NextFunction) => {
+/**
+ * DELETE /api/controllers/:controllerId/authorized-devices/:deviceId
+ * Удаление авторизованного устройства
+ * 
+ * Headers:
+ * - X-Device-Signature: Ed25519 подпись запроса (base64)
+ * - X-Device-Public-Key: Ed25519 публичный ключ (base64)
+ * 
+ * Response:
+ * {
+ *   message: string
+ * }
+ */
+router.delete('/:controllerId/authorized-devices/:deviceId', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).userId;
-    const { mac, firmwareVersion } = activateControllerSchema.parse(req.body);
     const pool = getPool();
-
-    // Check if controller already exists
-    const existing = await pool.query(
-      'SELECT id, user_id, is_active FROM controllers WHERE mac_address = $1',
-      [mac.toUpperCase()]
+    const { controllerId, deviceId } = req.params;
+    const publicKey = req.devicePublicKey;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
     );
-
-    if (existing.rows.length > 0) {
-      const controller = existing.rows[0];
-      if (controller.user_id !== userId) {
-        throw createError('Controller is already registered to another user', 403);
-      }
-      if (controller.is_active) {
-        throw createError('Controller is already activated', 400);
-      }
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
     }
-
-    // Generate activation token
-    const activationToken = uuidv4();
-
-    // Create or update controller
-    let controllerId: string;
-    if (existing.rows.length > 0) {
-      await pool.query(
-        `UPDATE controllers 
-         SET activation_token = $1, firmware_version = $2, updated_at = CURRENT_TIMESTAMP
-         WHERE mac_address = $3
-         RETURNING id`,
-        [activationToken, firmwareVersion, mac.toUpperCase()]
-      );
-      controllerId = existing.rows[0].id;
-    } else {
-      const result = await pool.query(
-        `INSERT INTO controllers (user_id, mac_address, firmware_version, activation_token)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id`,
-        [userId, mac.toUpperCase(), firmwareVersion, activationToken]
-      );
-      controllerId = result.rows[0].id;
-    }
-
-    logger.info(`Controller activation initiated: ${mac} for user ${userId}`);
-
-    res.status(201).json({
-      controllerId,
-      activationToken,
-      message: 'Activation token generated. Use this token to connect the controller.'
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Get controller by ID
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const userId = (req as any).userId;
-    const cabinetId = (req as any).cabinetId;
-    const controllerId = req.params.id;
-    const pool = getPool();
-
-    let result;
-    if (cabinetId) {
-      // Новая система кабинетов
-      result = await pool.query(
-        `SELECT id, mac_address, firmware_version, name, is_active, 
-                last_seen_at, created_at, updated_at
-         FROM controllers 
-         WHERE id = $1 AND cabinet_id = $2`,
-        [controllerId, cabinetId]
-      );
-    } else if (userId) {
-      // Старая система пользователей
-      result = await pool.query(
-        `SELECT id, mac_address, firmware_version, name, is_active, 
-                last_seen_at, created_at, updated_at
-         FROM controllers 
-         WHERE id = $1 AND user_id = $2`,
-        [controllerId, userId]
-      );
-    } else {
-      throw createError('Authentication required', 401);
-    }
-
+    
+    // Удаляем устройство
+    const result = await pool.query(
+      `DELETE FROM authorized_devices
+       WHERE id = $1 AND controller_id = $2
+       RETURNING id`,
+      [deviceId, controllerId]
+    );
+    
     if (result.rows.length === 0) {
-      throw createError('Controller not found', 404);
+      return res.status(404).json({ error: 'Device not found' });
     }
-
-    const row = result.rows[0];
+    
+    logger.info(`[DEVICE] Device removed: device_id=${deviceId}, controller_id=${controllerId}`);
+    
     res.json({
-      id: row.id,
-      macAddress: row.mac_address,
-      firmwareVersion: row.firmware_version,
-      name: row.name || `Controller ${row.mac_address}`,
-      isActive: row.is_active,
-      lastSeenAt: row.last_seen_at,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      message: 'Device removed successfully'
     });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Update controller metadata
-router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const userId = (req as any).userId;
-    const controllerId = req.params.id;
-    const { name } = req.body;
-    const pool = getPool();
-
-    // Verify ownership
-    const check = await pool.query(
-      'SELECT id FROM controllers WHERE id = $1 AND user_id = $2',
-      [controllerId, userId]
-    );
-
-    if (check.rows.length === 0) {
-      throw createError('Controller not found', 404);
-    }
-
-    // Update
-    await pool.query(
-      'UPDATE controllers SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [name, controllerId]
-    );
-
-    res.json({ message: 'Controller updated successfully' });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Delete controller
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const userId = (req as any).userId;
-    const controllerId = req.params.id;
-    const pool = getPool();
-
-    // Verify ownership
-    const check = await pool.query(
-      'SELECT id FROM controllers WHERE id = $1 AND user_id = $2',
-      [controllerId, userId]
-    );
-
-    if (check.rows.length === 0) {
-      throw createError('Controller not found', 404);
-    }
-
-    await pool.query('DELETE FROM controllers WHERE id = $1', [controllerId]);
-
-    logger.info(`Controller deleted: ${controllerId} by user ${userId}`);
-
-    res.json({ message: 'Controller deleted successfully' });
   } catch (error) {
     next(error);
   }
 });
 
 export default router;
-
