@@ -153,11 +153,12 @@ router.post('/initiate', activationRateLimiter, async (req: Request, res: Respon
     expiresAt.setMinutes(expiresAt.getMinutes() + 10);
     
     // Сохранение в pending_activations
+    // Сохраняем cabinet_secret временно (только для нового кабинета) для передачи контроллеру
     await pool.query(
       `INSERT INTO pending_activations 
-       (activation_code, cabinet_id, device_authorization_code, controller_mac, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [activation_code, cabinetId, deviceAuthorizationCode, macUpper, expiresAt]
+       (activation_code, cabinet_id, device_authorization_code, controller_mac, cabinet_secret, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [activation_code, cabinetId, deviceAuthorizationCode, macUpper, cabinetSecret || null, expiresAt]
     );
     
     logger.info(`Activation initiated: activation_code=${activation_code}, cabinet_id=${cabinetId}, device_code=${deviceAuthorizationCode}`);

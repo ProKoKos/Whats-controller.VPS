@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS pending_activations (
   cabinet_id UUID REFERENCES cabinets(id) ON DELETE CASCADE,
   device_authorization_code VARCHAR(6) NOT NULL,
   controller_mac VARCHAR(17),
+  cabinet_secret TEXT, -- Временное хранение cabinet_secret для передачи контроллеру (только для нового кабинета)
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

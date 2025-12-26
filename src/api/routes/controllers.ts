@@ -59,7 +59,7 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
     
     // Поиск pending_activation
     const pendingResult = await pool.query(
-      `SELECT pa.id, pa.cabinet_id, pa.device_authorization_code, pa.controller_mac, pa.expires_at
+      `SELECT pa.id, pa.cabinet_id, pa.device_authorization_code, pa.controller_mac, pa.cabinet_secret, pa.expires_at
        FROM pending_activations pa
        WHERE pa.activation_code = $1 AND pa.expires_at > CURRENT_TIMESTAMP`,
       [activation_code]
@@ -128,12 +128,20 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
     logger.info(`Controller activated: controller_id=${controllerId}, cabinet_id=${pending.cabinet_id}, mac=${macUpper}`);
     
     // Формируем ответ
-    res.status(200).json({
+    // Возвращаем cabinet_secret, если он был сохранен в pending_activations (для нового кабинета)
+    const response: any = {
       controller_id: controllerId,
       controller_secret: controllerSecret,
       cabinet_id: pending.cabinet_id,
       message: 'Controller activated successfully'
-    });
+    };
+    
+    // Если cabinet_secret был сохранен (для нового кабинета), возвращаем его
+    if (pending.cabinet_secret) {
+      response.cabinet_secret = pending.cabinet_secret;
+    }
+    
+    res.status(200).json(response);
   } catch (error) {
     if (error instanceof z.ZodError) {
       const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
