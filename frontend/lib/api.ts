@@ -647,7 +647,7 @@ export class ApiClient {
    * @param publicKey Публичный ключ (base64)
    * @returns Список устройств
    */
-  async getAuthorizedDevices(controllerId: string, signature: string, publicKey: string) {
+  async getControllerAuthorizedDevices(controllerId: string, signature: string, publicKey: string) {
     return this.request<{
       devices: Array<{
         device_id: string;
