@@ -262,7 +262,7 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
     }
     
     req.devicePublicKey = publicKey;
-    next();
+    return next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid signature format' });
   }
