@@ -23,6 +23,10 @@ export default function ControllerPage() {
   const [error, setError] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const [deviceName, setDeviceName] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [controllerStatus, setControllerStatus] = useState<any>(null);
+  const [connected, setConnected] = useState(false);
+  const [controllerStatus, setControllerStatus] = useState<any>(null);
 
   useEffect(() => {
     if (!pin) {
@@ -185,6 +189,22 @@ export default function ControllerPage() {
       console.log('[Controller] Controller info loaded:', controllerData);
       setController(controllerData);
       setAuthorized(true);
+      
+      // Проверяем статус подключения
+      try {
+        const connectionStatus = await apiClient.getControllerConnectionStatus(controllerId, signature, publicKey);
+        console.log('[Controller] Connection status:', connectionStatus);
+        setConnected(connectionStatus.connected);
+        
+        // Если контроллер подключен, загружаем его статус
+        if (connectionStatus.connected) {
+          await loadControllerStatus(publicKey, signature);
+        }
+      } catch (err: any) {
+        console.warn('[Controller] Failed to check connection status:', err);
+        setConnected(false);
+      }
+      
       setLoading(false);
     } catch (err: any) {
       console.error('[Controller] Load controller info error:', err);
@@ -195,6 +215,32 @@ export default function ControllerPage() {
         setError(`Ошибка загрузки: ${errorMessage}`);
       }
       setLoading(false);
+    }
+  };
+
+  const loadControllerStatus = async (publicKey: string, signature: string) => {
+    try {
+      console.log('[Controller] Loading controller status via tunnel...');
+      const response = await apiClient.proxyControllerRequest(
+        controllerId,
+        'GET',
+        '/api/status',
+        signature,
+        publicKey
+      );
+      
+      if (response.status === 200) {
+        const statusData = JSON.parse(response.body);
+        console.log('[Controller] Controller status loaded:', statusData);
+        setControllerStatus(statusData);
+      } else {
+        console.warn('[Controller] Failed to load status:', response.status, response.body);
+      }
+    } catch (err: any) {
+      console.error('[Controller] Failed to load controller status:', err);
+      if (err.message?.includes('not connected')) {
+        setConnected(false);
+      }
     }
   };
 
@@ -384,13 +430,41 @@ export default function ControllerPage() {
             </CardContent>
           </Card>
 
-          <Alert>
-            <CheckCircle className="h-4 w-4" />
-            <AlertDescription>
-              Интерфейс контроллера будет доступен здесь после реализации WebSocket туннеля.
-              Пока отображается базовая информация о контроллере.
-            </AlertDescription>
-          </Alert>
+          {connected ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wifi className="h-5 w-5 text-green-500" />
+                  Статус контроллера
+                </CardTitle>
+                <CardDescription>
+                  Данные получены через WebSocket туннель
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {controllerStatus ? (
+                  <div className="space-y-4">
+                    <pre className="bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg overflow-auto text-sm">
+                      {JSON.stringify(controllerStatus, null, 2)}
+                    </pre>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-neutral-900 dark:border-neutral-100 mx-auto mb-2"></div>
+                    <p className="text-sm text-neutral-600 dark:text-neutral-400">Загрузка данных...</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Alert>
+              <WifiOff className="h-4 w-4" />
+              <AlertDescription>
+                Контроллер не подключен к серверу через WebSocket туннель.
+                Убедитесь, что контроллер включен и подключен к интернету.
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </div>
     </div>

@@ -16,7 +16,7 @@ import controllerRoutes from './api/routes/controllers';
 import superadminRoutes from './api/routes/superadmin';
 
 // Tunnel service
-import { TunnelService } from './tunnel/TunnelService';
+import { initializeTunnelService } from './tunnel/tunnelServiceInstance';
 
 dotenv.config();
 
@@ -99,7 +99,7 @@ async function start() {
     logger.info('Redis connected');
 
     // Initialize tunnel service
-    const tunnelService = new TunnelService(wsServer);
+    const tunnelService = initializeTunnelService(wsServer);
     logger.info('Tunnel service initialized');
 
     // Proxy routes (needs tunnel service) - будет добавлено позже

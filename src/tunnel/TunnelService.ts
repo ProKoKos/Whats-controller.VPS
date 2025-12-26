@@ -263,16 +263,10 @@ export class TunnelService {
     body?: string
   ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
     // Find connection for this controller
-    const redis = getRedisClient();
-    const sessionId = await redis.get(`controller:${controllerId}:session`);
+    const connection = await this.getConnection(controllerId);
     
-    if (!sessionId) {
-      throw new Error('Controller not connected');
-    }
-
-    const connection = this.connections.get(sessionId as string);
     if (!connection) {
-      throw new Error('Controller connection not found');
+      throw new Error('Controller not connected');
     }
 
     // Create request message
@@ -309,13 +303,25 @@ export class TunnelService {
     });
   }
 
-  public getConnection(controllerId: string): TunnelConnection | undefined {
-    // This would need Redis lookup in production
+  public async getConnection(controllerId: string): Promise<TunnelConnection | undefined> {
+    // Сначала проверяем в памяти
     for (const conn of this.connections.values()) {
       if (conn.controllerId === controllerId) {
         return conn;
       }
     }
+    
+    // Если не найдено в памяти, проверяем Redis
+    const redis = getRedisClient();
+    const sessionId = await redis.get(`controller:${controllerId}:session`);
+    
+    if (sessionId) {
+      const connection = this.connections.get(sessionId as string);
+      if (connection) {
+        return connection;
+      }
+    }
+    
     return undefined;
   }
 }

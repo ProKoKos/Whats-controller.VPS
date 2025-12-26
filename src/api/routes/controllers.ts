@@ -5,6 +5,7 @@ import { createError } from '../../middleware/errorHandler';
 import { logger } from '../../utils/logger';
 import { generateControllerSecret, hashSecret, verifySecret } from '../../utils/crypto';
 import { verifyEd25519Signature } from '../../utils/ed25519';
+import { getTunnelService } from '../../tunnel/tunnelServiceInstance';
 
 const router = express.Router();
 
@@ -669,6 +670,136 @@ router.delete('/:controllerId/authorized-devices/:deviceId', verifyDeviceSignatu
     res.json({
       message: 'Device removed successfully'
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * GET /api/controllers/:controllerId/connection-status
+ * Проверка статуса подключения контроллера через WebSocket
+ * 
+ * Headers:
+ * - X-Device-Signature: Ed25519 подпись запроса (base64)
+ * - X-Device-Public-Key: Ed25519 публичный ключ (base64)
+ * 
+ * Response:
+ * {
+ *   connected: boolean
+ *   last_seen_at?: timestamp
+ * }
+ */
+router.get('/:controllerId/connection-status', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const publicKey = req.devicePublicKey;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
+    }
+    
+    // Проверяем подключение через TunnelService
+    const tunnelService = getTunnelService();
+    const connection = await tunnelService.getConnection(controllerId);
+    
+    // Получаем информацию о контроллере
+    const controller = await pool.query(
+      `SELECT last_seen_at FROM controllers WHERE id = $1`,
+      [controllerId]
+    );
+    
+    res.json({
+      connected: !!connection,
+      last_seen_at: controller.rows[0]?.last_seen_at || null
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * POST /api/controllers/:controllerId/proxy
+ * Проксирование HTTP запроса к контроллеру через WebSocket туннель
+ * 
+ * Headers:
+ * - X-Device-Signature: Ed25519 подпись запроса (base64)
+ * - X-Device-Public-Key: Ed25519 публичный ключ (base64)
+ * 
+ * Body:
+ * {
+ *   method: string (GET, POST, PUT, DELETE, etc.)
+ *   path: string (например, "/api/status")
+ *   headers?: Record<string, string>
+ *   body?: string
+ * }
+ * 
+ * Response:
+ * {
+ *   status: number
+ *   headers: Record<string, string>
+ *   body: string
+ * }
+ */
+router.post('/:controllerId/proxy', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const publicKey = req.devicePublicKey;
+    const { method, path, headers, body } = req.body;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
+    }
+    
+    // Валидация входных данных
+    if (!method || !path) {
+      return res.status(400).json({ error: 'method and path are required' });
+    }
+    
+    // Проксируем запрос через WebSocket туннель
+    const tunnelService = getTunnelService();
+    try {
+      const response = await tunnelService.proxyHttpRequest(
+        controllerId,
+        method,
+        path,
+        headers || {},
+        body
+      );
+      
+      res.json(response);
+    } catch (error: any) {
+      if (error.message === 'Controller not connected') {
+        return res.status(503).json({ 
+          error: 'Controller not connected',
+          message: 'Контроллер не подключен к серверу через WebSocket туннель'
+        });
+      }
+      throw error;
+    }
   } catch (error) {
     return next(error);
   }

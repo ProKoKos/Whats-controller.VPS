@@ -687,6 +687,66 @@ export class ApiClient {
   }
 
   /**
+   * Проверка статуса подключения контроллера через WebSocket
+   * @param controllerId ID контроллера
+   * @param signature Ed25519 подпись запроса
+   * @param publicKey Ed25519 публичный ключ
+   * @returns Статус подключения
+   */
+  async getControllerConnectionStatus(controllerId: string, signature: string, publicKey: string) {
+    return this.request<{
+      connected: boolean;
+      last_seen_at?: string | null;
+    }>(`/controllers/${controllerId}/connection-status`, {
+      method: 'GET',
+      headers: {
+        'X-Device-Signature': signature,
+        'X-Device-Public-Key': publicKey,
+      },
+    });
+  }
+
+  /**
+   * Проксирование HTTP запроса к контроллеру через WebSocket туннель
+   * @param controllerId ID контроллера
+   * @param method HTTP метод (GET, POST, PUT, DELETE, etc.)
+   * @param path Путь на контроллере (например, "/api/status")
+   * @param headers Заголовки запроса
+   * @param body Тело запроса (опционально)
+   * @param signature Ed25519 подпись запроса
+   * @param publicKey Ed25519 публичный ключ
+   * @returns Ответ от контроллера
+   */
+  async proxyControllerRequest(
+    controllerId: string,
+    method: string,
+    path: string,
+    signature: string,
+    publicKey: string,
+    headers?: Record<string, string>,
+    body?: string
+  ) {
+    return this.request<{
+      status: number;
+      headers: Record<string, string>;
+      body: string;
+    }>(`/controllers/${controllerId}/proxy`, {
+      method: 'POST',
+      headers: {
+        'X-Device-Signature': signature,
+        'X-Device-Public-Key': publicKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method,
+        path,
+        headers: headers || {},
+        body,
+      }),
+    });
+  }
+
+  /**
    * Список авторизованных устройств для контроллера
    * @param controllerId ID контроллера
    * @param signature Подпись запроса (base64)
