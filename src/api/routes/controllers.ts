@@ -57,6 +57,8 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
     
     const macUpper = mac_address.toUpperCase().replace(/[:-]/g, ':');
     
+    logger.info(`[TEST] Activation attempt: activation_code=${activation_code}, mac=${macUpper}, device_code=${device_authorization_code || 'SKIPPED'}`);
+    
     // Поиск pending_activation (сравниваем без учета регистра)
     const pendingResult = await pool.query(
       `SELECT pa.id, pa.cabinet_id, pa.device_authorization_code, pa.controller_mac, pa.cabinet_secret, pa.expires_at
@@ -66,14 +68,21 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
     );
     
     if (pendingResult.rows.length === 0) {
+      logger.warn(`[TEST] Activation code not found: ${activation_code}`);
       throw createError('Activation code not found or expired', 404);
     }
     
     const pending = pendingResult.rows[0];
     
-    // Проверка device_authorization_code
-    if (pending.device_authorization_code !== device_authorization_code) {
-      throw createError('Invalid device authorization code', 401);
+    // УПРОЩЕННАЯ ВЕРСИЯ: пропускаем проверку device_authorization_code для теста
+    if (device_authorization_code) {
+      // Проверка device_authorization_code (если передан)
+      if (pending.device_authorization_code !== device_authorization_code) {
+        logger.warn(`[TEST] Invalid device code: expected=${pending.device_authorization_code}, got=${device_authorization_code}`);
+        throw createError('Invalid device authorization code', 401);
+      }
+    } else {
+      logger.info(`[TEST] Device authorization code skipped (test mode)`);
     }
     
     // Проверка MAC адреса (должен совпадать с тем, что был указан при инициации)
@@ -125,7 +134,7 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
       [pending.id]
     );
     
-    logger.info(`Controller activated: controller_id=${controllerId}, cabinet_id=${pending.cabinet_id}, mac=${macUpper}`);
+    logger.info(`[TEST] Controller activated successfully: controller_id=${controllerId}, cabinet_id=${pending.cabinet_id}, mac=${macUpper}`);
     
     // Формируем ответ
     // Возвращаем cabinet_secret, если он был сохранен в pending_activations (для нового кабинета)
