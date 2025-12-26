@@ -25,8 +25,6 @@ export default function ControllerPage() {
   const [deviceName, setDeviceName] = useState("");
   const [connected, setConnected] = useState(false);
   const [controllerStatus, setControllerStatus] = useState<any>(null);
-  const [connected, setConnected] = useState(false);
-  const [controllerStatus, setControllerStatus] = useState<any>(null);
 
   useEffect(() => {
     if (!pin) {
