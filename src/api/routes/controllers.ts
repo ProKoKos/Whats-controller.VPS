@@ -188,7 +188,7 @@ router.get('/:controllerId/pin', async (req: Request, res: Response, next: NextF
       expires_at: expiresAt.toISOString()
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -232,7 +232,7 @@ router.get('/:controllerId/verify-pin', async (req: Request, res: Response, next
       expires_at: result.rows[0].expires_at
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -327,7 +327,7 @@ router.post('/:controllerId/authorize-device', verifyDeviceSignature, async (req
       message: 'Device authorized successfully'
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -395,7 +395,7 @@ router.get('/:controllerId/authorized-devices', verifyDeviceSignature, async (re
       }))
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -451,7 +451,7 @@ router.delete('/:controllerId/authorized-devices/:deviceId', verifyDeviceSignatu
       message: 'Device removed successfully'
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
