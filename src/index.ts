@@ -38,7 +38,7 @@ const TUNNEL_PORT = process.env.TUNNEL_PORT || 3001;
 
 // CORS (first)
 // Разрешаем запросы с контроллеров (локальные IP) и с основного домена
-const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3001'];
+const allowedOrigins: (string | RegExp)[] = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3001'];
 // Добавляем поддержку локальных IP адресов для контроллеров
 allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+$/);
 allowedOrigins.push(/^http:\/\/10\.\d+\.\d+\.\d+$/);
