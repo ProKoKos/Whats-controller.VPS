@@ -111,8 +111,22 @@ export class ApiClient {
     }
 
     if (!response.ok) {
+      // Пытаемся извлечь детальное сообщение об ошибке
+      let errorMessage = 'Request failed';
+      if (data) {
+        if (typeof data.error === 'string') {
+          errorMessage = data.error;
+        } else if (typeof data.error === 'object' && data.error?.message) {
+          errorMessage = data.error.message;
+        } else if (data.message) {
+          errorMessage = data.message;
+        } else if (data.error) {
+          errorMessage = String(data.error);
+        }
+      }
+      
       const error: ApiError = {
-        message: data.message || 'Request failed',
+        message: errorMessage,
         status: response.status,
       };
       throw error;

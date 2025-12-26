@@ -40,7 +40,17 @@ export default function ControllerPage() {
       setLoading(true);
 
       // Проверяем PIN
-      const pinResult = await apiClient.verifyControllerPin(controllerId, pin!);
+      console.log('[Controller] Verifying PIN for controller:', controllerId);
+      let pinResult;
+      try {
+        pinResult = await apiClient.verifyControllerPin(controllerId, pin!);
+        console.log('[Controller] PIN verification result:', pinResult);
+      } catch (err: any) {
+        console.error('[Controller] PIN verification error:', err);
+        setError(`Ошибка проверки PIN: ${err.message || 'Неизвестная ошибка'}`);
+        setLoading(false);
+        return;
+      }
       
       if (!pinResult.valid) {
         setError(pinResult.error || "Неверный или истекший PIN код");
@@ -70,8 +80,10 @@ export default function ControllerPage() {
 
   const bindDeviceWithPin = async () => {
     try {
+      console.log('[Controller] Binding device with PIN...');
       // Генерируем пару Ed25519 ключей
       const { privateKey, publicKey } = await generateKeyPair();
+      console.log('[Controller] Generated Ed25519 keys');
 
       // Генерируем имя устройства
       const deviceName = `Device ${new Date().toLocaleDateString('ru-RU')} ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
@@ -79,17 +91,21 @@ export default function ControllerPage() {
       // Формируем сообщение для подписи: метод + путь + тело запроса
       const requestBody = JSON.stringify({ device_name: deviceName, public_key: publicKey });
       const message = `POST/api/controllers/${controllerId}/authorize-device${requestBody}`;
+      console.log('[Controller] Signing message:', message.substring(0, 100) + '...');
       
       // Подписываем запрос
       const signature = await signMessage(message, privateKey);
+      console.log('[Controller] Message signed');
 
       // Отправляем запрос на привязку устройства
+      console.log('[Controller] Sending authorize device request...');
       const result = await apiClient.authorizeControllerDevice(
         controllerId,
         deviceName,
         publicKey,
         signature
       );
+      console.log('[Controller] Device authorized:', result);
 
       // Сохраняем ключи в localStorage
       if (typeof window !== 'undefined') {
@@ -113,14 +129,16 @@ export default function ControllerPage() {
       // Загружаем информацию о контроллере
       await loadControllerInfo(publicKey, signature);
     } catch (err: any) {
-      console.error('Device binding error:', err);
-      setError(err.message || "Ошибка при привязке устройства");
+      console.error('[Controller] Device binding error:', err);
+      const errorMessage = err.message || err.error || "Ошибка при привязке устройства";
+      setError(`Ошибка привязки устройства: ${errorMessage}`);
       setLoading(false);
     }
   };
 
   const authorizeWithEd25519 = async (privateKey: string) => {
     try {
+      console.log('[Controller] Authorizing with Ed25519...');
       // Получаем публичный ключ из приватного
       const publicKey = getPublicKeyFromPrivate(privateKey);
       
@@ -134,29 +152,35 @@ export default function ControllerPage() {
 
       // Формируем сообщение для подписи
       const message = `GET/api/controllers/${controllerId}`;
+      console.log('[Controller] Signing message:', message);
       const signature = await signMessage(message, privateKey);
+      console.log('[Controller] Message signed');
 
       // Загружаем информацию о контроллере с Ed25519 авторизацией
       await loadControllerInfo(publicKey, signature);
     } catch (err: any) {
-      console.error('Ed25519 authorization error:', err);
-      setError(err.message || "Ошибка авторизации");
+      console.error('[Controller] Ed25519 authorization error:', err);
+      const errorMessage = err.message || err.error || "Ошибка авторизации";
+      setError(`Ошибка авторизации: ${errorMessage}`);
       setLoading(false);
     }
   };
 
   const loadControllerInfo = async (publicKey: string, signature: string) => {
     try {
+      console.log('[Controller] Loading controller info...');
       const controllerData = await apiClient.getControllerWithAuth(controllerId, signature, publicKey);
+      console.log('[Controller] Controller info loaded:', controllerData);
       setController(controllerData);
       setAuthorized(true);
       setLoading(false);
     } catch (err: any) {
-      console.error('Load controller info error:', err);
+      console.error('[Controller] Load controller info error:', err);
       if (err.status === 403) {
         setError("Доступ запрещен. Устройство не авторизовано.");
       } else {
-        setError(err.message || "Ошибка при загрузке информации о контроллере");
+        const errorMessage = err.message || err.error || "Ошибка при загрузке информации о контроллере";
+        setError(`Ошибка загрузки: ${errorMessage}`);
       }
       setLoading(false);
     }
