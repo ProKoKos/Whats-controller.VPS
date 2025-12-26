@@ -57,11 +57,11 @@ router.post('/confirm-activation', async (req: Request, res: Response, next: Nex
     
     const macUpper = mac_address.toUpperCase().replace(/[:-]/g, ':');
     
-    // Поиск pending_activation
+    // Поиск pending_activation (сравниваем без учета регистра)
     const pendingResult = await pool.query(
       `SELECT pa.id, pa.cabinet_id, pa.device_authorization_code, pa.controller_mac, pa.cabinet_secret, pa.expires_at
        FROM pending_activations pa
-       WHERE pa.activation_code = $1 AND pa.expires_at > CURRENT_TIMESTAMP`,
+       WHERE UPPER(pa.activation_code) = UPPER($1) AND pa.expires_at > CURRENT_TIMESTAMP`,
       [activation_code]
     );
     
