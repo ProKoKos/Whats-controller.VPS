@@ -189,14 +189,32 @@ export default function ControllerPage() {
       setAuthorized(true);
       
       // Проверяем статус подключения
+      // Создаем новую подпись для запроса connection-status
       try {
-        const connectionStatus = await apiClient.getControllerConnectionStatus(controllerId, signature, publicKey);
-        console.log('[Controller] Connection status:', connectionStatus);
-        setConnected(connectionStatus.connected);
+        const storageKey = `ed25519_private_key_${controllerId}`;
+        const storedPrivateKey = typeof window !== 'undefined' 
+          ? localStorage.getItem(storageKey) 
+          : null;
         
-        // Если контроллер подключен, загружаем его статус
-        if (connectionStatus.connected) {
-          await loadControllerStatus(publicKey, signature);
+        if (storedPrivateKey) {
+          const connectionStatusMessage = `GET/controllers/${controllerId}/connection-status`;
+          console.log('[Controller] Signing connection-status message:', connectionStatusMessage);
+          const connectionStatusSignature = await signMessage(connectionStatusMessage, storedPrivateKey);
+          
+          const connectionStatus = await apiClient.getControllerConnectionStatus(controllerId, connectionStatusSignature, publicKey);
+          console.log('[Controller] Connection status:', connectionStatus);
+          setConnected(connectionStatus.connected);
+          
+          // Если контроллер подключен, загружаем его статус
+          if (connectionStatus.connected) {
+            const statusMessage = `POST/controllers/${controllerId}/proxy`;
+            console.log('[Controller] Signing proxy message:', statusMessage);
+            const statusSignature = await signMessage(statusMessage, storedPrivateKey);
+            await loadControllerStatus(publicKey, statusSignature);
+          }
+        } else {
+          console.warn('[Controller] Private key not found for connection status check');
+          setConnected(false);
         }
       } catch (err: any) {
         console.warn('[Controller] Failed to check connection status:', err);
