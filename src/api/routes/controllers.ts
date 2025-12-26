@@ -414,7 +414,21 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
     if (path.startsWith('/api')) {
       path = path.substring(4); // Убираем /api
     }
-    const message = req.method + path + JSON.stringify(req.body || {});
+    
+    // Важно: JSON.stringify должен давать тот же результат, что и на клиенте
+    // Используем упорядоченный JSON (сортировка ключей)
+    const bodyStr = req.body ? JSON.stringify(req.body, Object.keys(req.body).sort()) : '{}';
+    const message = req.method + path + bodyStr;
+    
+    logger.info(`[SIGNATURE] Verifying signature:`, {
+      method: req.method,
+      originalPath: req.path,
+      normalizedPath: path,
+      messagePreview: message.substring(0, 150),
+      bodyKeys: req.body ? Object.keys(req.body).sort() : [],
+      signatureLength: signature?.length,
+      publicKeyLength: publicKey?.length
+    });
     
     const isValid = verifyEd25519Signature(
       Buffer.from(signature, 'base64'),
@@ -423,7 +437,13 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
     );
     
     if (!isValid) {
-      logger.warn(`[SIGNATURE] Invalid signature for path: ${path}, method: ${req.method}`);
+      logger.warn(`[SIGNATURE] Invalid signature:`, {
+        method: req.method,
+        path: path,
+        message: message,
+        signature: signature?.substring(0, 20) + '...',
+        publicKey: publicKey?.substring(0, 20) + '...'
+      });
       return res.status(401).json({ error: 'Invalid signature' });
     }
     
@@ -461,8 +481,16 @@ router.post('/:controllerId/authorize-device', verifyDeviceSignature, async (req
     const { device_name, public_key } = req.body;
     const publicKeyHeader = req.headers['x-device-public-key'] as string;
     
+    logger.info(`[AUTHORIZE-DEVICE] Request received:`, {
+      controllerId,
+      device_name,
+      public_key: public_key?.substring(0, 20) + '...',
+      publicKeyHeader: publicKeyHeader?.substring(0, 20) + '...'
+    });
+    
     // Проверка, что public_key из body совпадает с public_key из заголовка
     if (public_key !== publicKeyHeader) {
+      logger.warn(`[AUTHORIZE-DEVICE] Public key mismatch`);
       return res.status(400).json({ error: 'Public key mismatch' });
     }
     

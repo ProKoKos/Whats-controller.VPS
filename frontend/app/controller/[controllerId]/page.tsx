@@ -89,9 +89,13 @@ export default function ControllerPage() {
       const deviceName = `Device ${new Date().toLocaleDateString('ru-RU')} ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 
       // Формируем сообщение для подписи: метод + путь (без /api) + тело запроса
-      const requestBody = JSON.stringify({ device_name: deviceName, public_key: publicKey });
+      // Важно: сортируем ключи для консистентности с сервером
+      const bodyObj = { device_name: deviceName, public_key: publicKey };
+      const requestBody = JSON.stringify(bodyObj, Object.keys(bodyObj).sort());
       const message = `POST/controllers/${controllerId}/authorize-device${requestBody}`;
-      console.log('[Controller] Signing message:', message.substring(0, 100) + '...');
+      console.log('[Controller] Signing message:', message);
+      console.log('[Controller] Message length:', message.length);
+      console.log('[Controller] Body object:', bodyObj);
       
       // Подписываем запрос
       const signature = await signMessage(message, privateKey);
