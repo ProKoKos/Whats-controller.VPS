@@ -147,7 +147,7 @@ export default function ControllerPage() {
 
   const loadControllerInfo = async (publicKey: string, signature: string) => {
     try {
-      const controllerData = await apiClient.getController(controllerId, signature, publicKey);
+      const controllerData = await apiClient.getControllerWithAuth(controllerId, signature, publicKey);
       setController(controllerData);
       setAuthorized(true);
       setLoading(false);

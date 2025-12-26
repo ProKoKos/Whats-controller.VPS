@@ -624,7 +624,7 @@ export class ApiClient {
    * @param publicKey Публичный ключ (base64)
    * @returns Информация о контроллере
    */
-  async getController(controllerId: string, signature: string, publicKey: string) {
+  async getControllerWithAuth(controllerId: string, signature: string, publicKey: string) {
     return this.request<{
       controller_id: string;
       mac_address: string;
