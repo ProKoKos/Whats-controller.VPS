@@ -409,10 +409,26 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
     
     // Проверка подписи Ed25519
     // Формируем сообщение для подписи: метод + путь (без /api префикса) + тело запроса
-    // Клиент подписывает без /api префикса, поэтому убираем его из req.path
+    // req.path в Express роутере содержит путь относительно роутера
+    // Роутер подключен как /api/controllers, поэтому req.path будет /:controllerId/authorize-device
+    // Но клиент подписывает /controllers/:controllerId/authorize-device
+    // Нужно добавить /controllers к пути
     let path = req.path;
+    
+    // Если путь начинается с /api, убираем его
     if (path.startsWith('/api')) {
-      path = path.substring(4); // Убираем /api
+      path = path.substring(4);
+    }
+    
+    // Если путь не начинается с /controllers, добавляем его
+    // req.path будет /:controllerId/authorize-device, нужно /controllers/:controllerId/authorize-device
+    if (!path.startsWith('/controllers')) {
+      // Заменяем первый / на /controllers/
+      if (path.startsWith('/')) {
+        path = '/controllers' + path;
+      } else {
+        path = '/controllers/' + path;
+      }
     }
     
     // Важно: JSON.stringify должен давать тот же результат, что и на клиенте
