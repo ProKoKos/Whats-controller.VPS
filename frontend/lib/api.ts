@@ -595,7 +595,7 @@ export class ApiClient {
    * @param signature Подпись запроса (base64)
    * @returns ID привязанного устройства
    */
-  async authorizeDevice(
+  async authorizeControllerDevice(
     controllerId: string,
     deviceName: string,
     publicKey: string,

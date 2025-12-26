@@ -84,7 +84,7 @@ export default function ControllerPage() {
       const signature = await signMessage(message, privateKey);
 
       // Отправляем запрос на привязку устройства
-      const result = await apiClient.authorizeDevice(
+      const result = await apiClient.authorizeControllerDevice(
         controllerId,
         deviceName,
         publicKey,
