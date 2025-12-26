@@ -45,7 +45,7 @@ export async function generateKeyPair(): Promise<{
   privateKey: string;
   publicKey: string;
 }> {
-  const privateKey = ed25519Lib.utils.randomPrivateKey();
+  const privateKey = ed25519Lib.utils.randomSecretKey();
   const publicKey = getPublicKey(privateKey);
   
   return {
