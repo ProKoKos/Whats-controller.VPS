@@ -95,7 +95,7 @@ router.post('/initiate', activationRateLimiter, async (req: Request, res: Respon
     const existingActivation = await pool.query(
       `SELECT id, expires_at 
        FROM pending_activations 
-       WHERE activation_code = $1 AND expires_at > CURRENT_TIMESTAMP`,
+       WHERE UPPER(activation_code) = UPPER($1) AND expires_at > CURRENT_TIMESTAMP`,
       [activation_code]
     );
     
