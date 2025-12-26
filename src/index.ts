@@ -37,8 +37,34 @@ const PORT = process.env.PORT || 3000;
 const TUNNEL_PORT = process.env.TUNNEL_PORT || 3001;
 
 // CORS (first)
+// Разрешаем запросы с контроллеров (локальные IP) и с основного домена
+const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3001'];
+// Добавляем поддержку локальных IP адресов для контроллеров
+allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+$/);
+allowedOrigins.push(/^http:\/\/10\.\d+\.\d+\.\d+$/);
+allowedOrigins.push(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3001'],
+  origin: (origin, callback) => {
+    // Разрешаем запросы без origin (например, из мобильных приложений)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Проверяем точное совпадение
+    if (allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return allowed === origin;
+      } else if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    })) {
+      return callback(null, true);
+    }
+    
+    callback(null, true); // Разрешаем все для контроллеров (можно ужесточить позже)
+  },
   credentials: true
 }));
 
