@@ -128,10 +128,18 @@ export default function ControllerPage() {
       }
 
       setDeviceName(deviceName);
-      setAuthorized(true);
+      
+      // Небольшая задержка, чтобы устройство точно добавилось в базу
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Загружаем информацию о контроллере
-      await loadControllerInfo(publicKey, signature);
+      // Используем тот же публичный ключ и подписываем новое сообщение для GET запроса
+      const getMessage = `GET/controllers/${controllerId}`;
+      console.log('[Controller] Signing GET message:', getMessage);
+      const getSignature = await signMessage(getMessage, privateKey);
+      console.log('[Controller] GET message signed');
+      
+      await loadControllerInfo(publicKey, getSignature);
     } catch (err: any) {
       console.error('[Controller] Device binding error:', err);
       const errorMessage = err.message || err.error || "Ошибка при привязке устройства";

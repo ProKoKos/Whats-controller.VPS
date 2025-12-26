@@ -445,10 +445,14 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
       method: req.method,
       originalPath: req.path,
       normalizedPath: path,
-      messagePreview: message.substring(0, 150),
+      fullMessage: message,
+      messageLength: message.length,
       bodyKeys: req.body ? Object.keys(req.body).sort() : [],
+      bodyStr: bodyStr,
       signatureLength: signature?.length,
-      publicKeyLength: publicKey?.length
+      publicKeyLength: publicKey?.length,
+      publicKeyPreview: publicKey?.substring(0, 30) + '...',
+      signaturePreview: signature?.substring(0, 30) + '...'
     });
     
     const isValid = verifyEd25519Signature(
