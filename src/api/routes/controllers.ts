@@ -44,14 +44,22 @@ router.post('/activate', async (req: Request, res: Response, next: NextFunction)
     logger.info(`[ACTIVATION] Activation attempt: mac=${macUpper}`);
     
     // Проверка: не активирован ли уже контроллер с таким MAC
+    // Если контроллер существует, но неактивен - удаляем его для повторной активации
     const existing = await pool.query(
-      'SELECT id FROM controllers WHERE mac_address = $1 AND is_active = true',
+      'SELECT id, is_active FROM controllers WHERE mac_address = $1',
       [macUpper]
     );
     
     if (existing.rows.length > 0) {
-      logger.warn(`[ACTIVATION] Controller already activated: ${existing.rows[0].id}`);
-      throw createError('Controller with this MAC address is already activated', 409);
+      const existingController = existing.rows[0];
+      if (existingController.is_active) {
+        logger.warn(`[ACTIVATION] Controller already activated: ${existingController.id}`);
+        throw createError('Controller with this MAC address is already activated', 409);
+      } else {
+        // Контроллер существует, но неактивен - удаляем его для повторной активации
+        logger.info(`[ACTIVATION] Removing inactive controller ${existingController.id} for re-activation`);
+        await pool.query('DELETE FROM controllers WHERE id = $1', [existingController.id]);
+      }
     }
     
     // Генерация controller_secret
