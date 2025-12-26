@@ -285,6 +285,42 @@ router.get('/cabinets/:id', authenticateSuperadmin, async (req: Request, res: Re
 });
 
 /**
+ * DELETE /api/superadmin/controllers/:id
+ * Удаление контроллера суперадмином
+ */
+router.delete('/controllers/:id', authenticateSuperadmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const controllerId = req.params.id;
+
+    // Проверяем существование контроллера
+    const checkResult = await pool.query(
+      'SELECT id FROM controllers WHERE id = $1',
+      [controllerId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      throw createError('Controller not found', 404);
+    }
+
+    // Удаляем контроллер (CASCADE удалит связанные записи: pins, authorized_devices)
+    await pool.query(
+      'DELETE FROM controllers WHERE id = $1',
+      [controllerId]
+    );
+
+    logger.info(`[SUPERADMIN] Controller deleted: ${controllerId}`);
+
+    res.json({
+      message: 'Controller deleted successfully',
+      controller_id: controllerId
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/superadmin/controllers
  * Список всех контроллеров
  */

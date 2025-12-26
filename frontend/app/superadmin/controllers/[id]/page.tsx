@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
-import { ArrowLeft, Server, Wifi, WifiOff, RotateCcw } from "lucide-react";
+import { ArrowLeft, Server, Wifi, WifiOff, RotateCcw, Trash2 } from "lucide-react";
 
 export default function SuperadminControllerDetailPage() {
   const params = useParams();
@@ -52,6 +52,19 @@ export default function SuperadminControllerDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm(`Удалить контроллер ${controllerId}? Это действие нельзя отменить. Все данные контроллера будут удалены из базы.`)) {
+      return;
+    }
+
+    try {
+      await apiClient.deleteSuperadminController(controllerId);
+      router.push("/superadmin/controllers");
+    } catch (err: any) {
+      alert(err.message || "Ошибка при удалении контроллера");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-neutral-50 to-neutral-100 dark:from-neutral-900 dark:to-neutral-800">
@@ -80,9 +93,13 @@ export default function SuperadminControllerDetailPage() {
                 Назад
               </Link>
             </Button>
-            <Button variant="destructive" onClick={handleReset}>
+            <Button variant="outline" onClick={handleReset}>
               <RotateCcw className="w-4 h-4 mr-2" />
-              Сбросить контроллер
+              Сбросить
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Удалить
             </Button>
           </div>
         </div>

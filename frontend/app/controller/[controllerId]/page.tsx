@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
 import { generateKeyPair, signMessage, getPublicKeyFromPrivate } from "@/lib/ed25519";
-import { ArrowLeft, Server, Wifi, WifiOff, Shield, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Server, Wifi, WifiOff, Shield, CheckCircle, XCircle, PowerOff } from "lucide-react";
 
 export default function ControllerPage() {
   const params = useParams();
@@ -186,6 +186,48 @@ export default function ControllerPage() {
     }
   };
 
+  const handleDeactivate = async () => {
+    if (!confirm(`Деактивировать контроллер? Контроллер будет удален из базы данных. Это действие нельзя отменить.`)) {
+      return;
+    }
+
+    try {
+      const storageKey = `ed25519_private_key_${controllerId}`;
+      const storedPrivateKey = typeof window !== 'undefined' 
+        ? localStorage.getItem(storageKey) 
+        : null;
+
+      if (!storedPrivateKey) {
+        alert('Ошибка: не найден приватный ключ для авторизации');
+        return;
+      }
+
+      const publicKey = getPublicKeyFromPrivate(storedPrivateKey);
+      const message = `POST/api/controllers/${controllerId}/deactivate`;
+      const signature = await signMessage(message, storedPrivateKey);
+
+      await apiClient.deactivateController(controllerId, signature, publicKey);
+      
+      // Очищаем данные из localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(storageKey);
+        localStorage.removeItem(`ed25519_public_key_${controllerId}`);
+        localStorage.removeItem(`device_name_${controllerId}`);
+        const authorizedControllers = JSON.parse(
+          localStorage.getItem('authorized_controllers') || '[]'
+        );
+        const updated = authorizedControllers.filter((id: string) => id !== controllerId);
+        localStorage.setItem('authorized_controllers', JSON.stringify(updated));
+      }
+
+      alert('Контроллер успешно деактивирован');
+      router.push('/');
+    } catch (err: any) {
+      console.error('[Controller] Deactivation error:', err);
+      alert(err.message || err.error || "Ошибка при деактивации контроллера");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-neutral-50 to-neutral-100 dark:from-neutral-900 dark:to-neutral-800">
@@ -308,6 +350,25 @@ export default function ControllerPage() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Действия</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button 
+                variant="destructive" 
+                onClick={handleDeactivate}
+                className="w-full"
+              >
+                <PowerOff className="h-4 w-4 mr-2" />
+                Деактивировать контроллер
+              </Button>
+              <p className="text-sm text-muted-foreground mt-2">
+                Удалит контроллер из базы данных. Все данные будут потеряны.
+              </p>
             </CardContent>
           </Card>
 

@@ -563,6 +563,19 @@ export class ApiClient {
    * Сброс контроллера (отвязка от кабинета)
    * @param controllerId ID контроллера
    */
+  /**
+   * Удаление контроллера суперадмином
+   * @param controllerId ID контроллера
+   */
+  async deleteSuperadminController(controllerId: string) {
+    return this.request<{
+      message: string;
+      controller_id: string;
+    }>(`/superadmin/controllers/${controllerId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async resetSuperadminController(controllerId: string) {
     return this.request<{
       message: string;
@@ -647,6 +660,25 @@ export class ApiClient {
       last_seen_at?: string;
     }>(`/controllers/${controllerId}`, {
       method: 'GET',
+      headers: {
+        'X-Device-Signature': signature,
+        'X-Device-Public-Key': publicKey,
+      },
+    });
+  }
+
+  /**
+   * Деактивация контроллера (удаление из базы)
+   * @param controllerId ID контроллера
+   * @param signature Подпись запроса (base64)
+   * @param publicKey Публичный ключ (base64)
+   */
+  async deactivateController(controllerId: string, signature: string, publicKey: string) {
+    return this.request<{
+      message: string;
+      controller_id: string;
+    }>(`/controllers/${controllerId}/deactivate`, {
+      method: 'POST',
       headers: {
         'X-Device-Signature': signature,
         'X-Device-Public-Key': publicKey,

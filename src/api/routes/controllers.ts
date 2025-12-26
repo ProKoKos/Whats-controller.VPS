@@ -308,6 +308,86 @@ router.get('/:controllerId', verifyDeviceSignature, async (req: Request, res: Re
 });
 
 /**
+ * DELETE /api/controllers/:controllerId
+ * Удаление контроллера (только для суперадмина или через Ed25519 авторизацию)
+ */
+router.delete('/:controllerId', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const publicKey = req.devicePublicKey;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
+    }
+    
+    // Удаляем контроллер (CASCADE удалит связанные записи)
+    await pool.query(
+      `DELETE FROM controllers WHERE id = $1`,
+      [controllerId]
+    );
+    
+    res.json({
+      message: 'Controller deleted successfully',
+      controller_id: controllerId
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * POST /api/controllers/:controllerId/deactivate
+ * Деактивация контроллера (удаление из базы, очистка данных на контроллере)
+ */
+router.post('/:controllerId/deactivate', verifyDeviceSignature, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pool = getPool();
+    const { controllerId } = req.params;
+    const publicKey = req.devicePublicKey;
+    
+    if (!publicKey) {
+      return res.status(401).json({ error: 'Missing public key' });
+    }
+    
+    // Проверка авторизации устройства
+    const deviceCheck = await pool.query(
+      `SELECT id FROM authorized_devices
+       WHERE controller_id = $1 AND public_key = $2`,
+      [controllerId, publicKey]
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Device not authorized' });
+    }
+    
+    // Удаляем контроллер (CASCADE удалит связанные записи)
+    await pool.query(
+      `DELETE FROM controllers WHERE id = $1`,
+      [controllerId]
+    );
+    
+    res.json({
+      message: 'Controller deactivated successfully',
+      controller_id: controllerId
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
  * Middleware для проверки Ed25519 подписи
  */
 async function verifyDeviceSignature(req: Request, res: Response, next: NextFunction) {
