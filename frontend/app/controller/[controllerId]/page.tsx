@@ -88,9 +88,9 @@ export default function ControllerPage() {
       // Генерируем имя устройства
       const deviceName = `Device ${new Date().toLocaleDateString('ru-RU')} ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 
-      // Формируем сообщение для подписи: метод + путь + тело запроса
+      // Формируем сообщение для подписи: метод + путь (без /api) + тело запроса
       const requestBody = JSON.stringify({ device_name: deviceName, public_key: publicKey });
-      const message = `POST/api/controllers/${controllerId}/authorize-device${requestBody}`;
+      const message = `POST/controllers/${controllerId}/authorize-device${requestBody}`;
       console.log('[Controller] Signing message:', message.substring(0, 100) + '...');
       
       // Подписываем запрос
@@ -150,8 +150,8 @@ export default function ControllerPage() {
         setDeviceName(storedDeviceName);
       }
 
-      // Формируем сообщение для подписи
-      const message = `GET/api/controllers/${controllerId}`;
+      // Формируем сообщение для подписи: метод + путь (без /api) + тело запроса
+      const message = `GET/controllers/${controllerId}`;
       console.log('[Controller] Signing message:', message);
       const signature = await signMessage(message, privateKey);
       console.log('[Controller] Message signed');
@@ -203,7 +203,7 @@ export default function ControllerPage() {
       }
 
       const publicKey = getPublicKeyFromPrivate(storedPrivateKey);
-      const message = `POST/api/controllers/${controllerId}/deactivate`;
+      const message = `POST/controllers/${controllerId}/deactivate`;
       const signature = await signMessage(message, storedPrivateKey);
 
       await apiClient.deactivateController(controllerId, signature, publicKey);

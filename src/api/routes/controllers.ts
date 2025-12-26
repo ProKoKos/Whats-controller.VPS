@@ -408,15 +408,22 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
     }
     
     // Проверка подписи Ed25519
-    // Формируем сообщение для подписи: метод + путь + тело запроса
-    const message = req.method + req.path + JSON.stringify(req.body || {});
+    // Формируем сообщение для подписи: метод + путь (без /api префикса) + тело запроса
+    // Клиент подписывает без /api префикса, поэтому убираем его из req.path
+    let path = req.path;
+    if (path.startsWith('/api')) {
+      path = path.substring(4); // Убираем /api
+    }
+    const message = req.method + path + JSON.stringify(req.body || {});
+    
     const isValid = verifyEd25519Signature(
       Buffer.from(signature, 'base64'),
-      Buffer.from(message),
+      Buffer.from(message, 'utf-8'),
       Buffer.from(publicKey, 'base64')
     );
     
     if (!isValid) {
+      logger.warn(`[SIGNATURE] Invalid signature for path: ${path}, method: ${req.method}`);
       return res.status(401).json({ error: 'Invalid signature' });
     }
     
