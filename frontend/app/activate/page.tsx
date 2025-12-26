@@ -175,7 +175,7 @@ export default function ActivatePage() {
                       value={macAddress}
                       onChange={(e) => setMacAddress(e.target.value.toUpperCase())}
                       required
-                      pattern="([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})"
+                      pattern="^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
                     />
                     <p className="text-xs text-neutral-500 mt-1">
                       Формат: AA:BB:CC:DD:EE:FF или AA-BB-CC-DD-EE-FF
