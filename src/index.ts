@@ -12,14 +12,8 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 
 // Routes
-import authRoutes from './api/routes/auth';
 import controllerRoutes from './api/routes/controllers';
-import notificationRoutes from './api/routes/notifications';
-import metricsRoutes from './api/routes/metrics';
-import activationRoutes from './api/routes/activation';
-import cabinetRoutes from './api/routes/cabinets';
 import superadminRoutes from './api/routes/superadmin';
-import { createProxyRouter } from './api/routes/proxy';
 
 // Tunnel service
 import { TunnelService } from './tunnel/TunnelService';
@@ -87,13 +81,8 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/activation', activationRoutes);
 app.use('/api/controllers', controllerRoutes);
-app.use('/api/cabinets', cabinetRoutes);
 app.use('/api/superadmin', superadminRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/metrics', metricsRoutes);
 
 // Error handler
 app.use(errorHandler);
@@ -113,8 +102,8 @@ async function start() {
     const tunnelService = new TunnelService(wsServer);
     logger.info('Tunnel service initialized');
 
-    // Proxy routes (needs tunnel service)
-    app.use('/proxy', createProxyRouter(tunnelService));
+    // Proxy routes (needs tunnel service) - будет добавлено позже
+    // app.use('/proxy', createProxyRouter(tunnelService));
 
     // Start HTTP server
     httpServer.listen(PORT, () => {

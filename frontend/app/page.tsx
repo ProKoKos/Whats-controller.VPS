@@ -1,20 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { isAuthenticated } from "@/lib/auth";
 
 export default function HomePage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    if (isAuthenticated()) {
-      router.push("/dashboard");
-    }
-  }, [router]);
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-50 to-neutral-100 dark:from-neutral-900 dark:to-neutral-800">
       <div className="container mx-auto px-4 py-16">
@@ -73,11 +63,8 @@ export default function HomePage() {
           </Card>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button asChild size="lg" className="text-lg px-8">
-              <Link href="/activate">Активировать контроллер</Link>
-            </Button>
             <Button asChild size="lg" variant="outline" className="text-lg px-8">
-              <Link href="/login">Вход в личный кабинет</Link>
+              <Link href="/superadmin/login">Вход для администратора</Link>
             </Button>
           </div>
 
