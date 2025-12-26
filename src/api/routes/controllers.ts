@@ -432,8 +432,13 @@ async function verifyDeviceSignature(req: Request, res: Response, next: NextFunc
     }
     
     // Важно: JSON.stringify должен давать тот же результат, что и на клиенте
-    // Используем упорядоченный JSON (сортировка ключей)
-    const bodyStr = req.body ? JSON.stringify(req.body, Object.keys(req.body).sort()) : '{}';
+    // Для GET запросов тело обычно пустое, клиент не добавляет {} в конце
+    // Для POST/PUT/DELETE запросов добавляем тело
+    let bodyStr = '';
+    if (req.method !== 'GET' && req.body && Object.keys(req.body).length > 0) {
+      // Используем упорядоченный JSON (сортировка ключей)
+      bodyStr = JSON.stringify(req.body, Object.keys(req.body).sort());
+    }
     const message = req.method + path + bodyStr;
     
     logger.info(`[SIGNATURE] Verifying signature:`, {
