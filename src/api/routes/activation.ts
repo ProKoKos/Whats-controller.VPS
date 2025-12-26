@@ -158,7 +158,7 @@ router.post('/initiate', activationRateLimiter, async (req: Request, res: Respon
       `INSERT INTO pending_activations 
        (activation_code, cabinet_id, device_authorization_code, controller_mac, cabinet_secret, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [activation_code, cabinetId, deviceAuthorizationCode, macUpper, cabinetSecret || null, expiresAt]
+      [activation_code.toUpperCase(), cabinetId, deviceAuthorizationCode, macUpper, cabinetSecret || null, expiresAt]
     );
     
     logger.info(`Activation initiated: activation_code=${activation_code}, cabinet_id=${cabinetId}, device_code=${deviceAuthorizationCode}`);
